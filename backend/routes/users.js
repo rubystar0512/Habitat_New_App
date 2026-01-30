@@ -100,4 +100,111 @@ router.patch('/:id/role', requireAdmin, idParamRule, handleValidationErrors, asy
   }
 });
 
+// Create user (admin only)
+router.post('/', requireAdmin, async (req, res, next) => {
+  try {
+    const { username, email, password, role = 'user', isApproved = false } = req.body;
+
+    if (!username || !email || !password) {
+      return res.status(400).json({ error: 'Username, email, and password are required' });
+    }
+
+    const bcrypt = require('bcryptjs');
+    const { Op } = require('sequelize');
+
+    // Check if user exists
+    const existingUser = await User.findOne({
+      where: {
+        [Op.or]: [{ username }, { email }]
+      }
+    });
+
+    if (existingUser) {
+      return res.status(409).json({ error: 'Username or email already exists' });
+    }
+
+    // Hash password
+    const passwordHash = await bcrypt.hash(password, 10);
+
+    // Create user
+    const user = await User.create({
+      username,
+      email,
+      passwordHash,
+      role: role || 'user',
+      isApproved: isApproved || false
+    });
+
+    const { passwordHash: _, ...userData } = user.toJSON();
+
+    res.status(201).json({
+      message: 'User created successfully',
+      user: userData
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Update user (admin only)
+router.patch('/:id', requireAdmin, idParamRule, handleValidationErrors, async (req, res, next) => {
+  try {
+    const { username, email, role, isApproved, password } = req.body;
+
+    const user = await User.findByPk(req.params.id);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const updateData = {};
+    if (username !== undefined) updateData.username = username;
+    if (email !== undefined) updateData.email = email;
+    if (role !== undefined) {
+      if (!['admin', 'user'].includes(role)) {
+        return res.status(400).json({ error: 'Invalid role' });
+      }
+      updateData.role = role;
+    }
+    if (isApproved !== undefined) updateData.isApproved = isApproved;
+    if (password) {
+      const bcrypt = require('bcryptjs');
+      updateData.passwordHash = await bcrypt.hash(password, 10);
+    }
+
+    await user.update(updateData);
+
+    const { passwordHash: _, ...userData } = user.toJSON();
+
+    res.json({
+      message: 'User updated successfully',
+      user: userData
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Delete user (admin only)
+router.delete('/:id', requireAdmin, idParamRule, handleValidationErrors, async (req, res, next) => {
+  try {
+    const user = await User.findByPk(req.params.id);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Prevent deleting yourself
+    if (user.id === req.user.id) {
+      return res.status(400).json({ error: 'Cannot delete your own account' });
+    }
+
+    await user.destroy();
+
+    res.json({
+      message: 'User deleted successfully'
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 module.exports = router;
