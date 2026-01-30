@@ -63,7 +63,7 @@ const ReservationAuditLog = sequelize.define('ReservationAuditLog', {
 }, {
   tableName: 'reservation_audit_log',
   timestamps: true,
-  underscored: false,
+  underscored: true,
   indexes: [
     { fields: ['reservation_id'] },
     { fields: ['user_id'] },

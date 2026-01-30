@@ -67,7 +67,7 @@ const Reservation = sequelize.define('Reservation', {
 }, {
   tableName: 'reservations',
   timestamps: true,
-  underscored: false,
+  underscored: true,
   indexes: [
     { fields: ['user_id'] },
     { fields: ['account_id'] },

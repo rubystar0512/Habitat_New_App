@@ -105,7 +105,7 @@ const SuccessfulTask = sequelize.define('SuccessfulTask', {
 }, {
   tableName: 'successful_tasks',
   timestamps: true,
-  underscored: false,
+  underscored: true,
   indexes: [
     { fields: ['user_id'] },
     { fields: ['commit_id'] },

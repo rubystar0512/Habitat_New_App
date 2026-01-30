@@ -30,7 +30,7 @@ const CommitStatusCache = sequelize.define('CommitStatusCache', {
 }, {
   tableName: 'commit_status_cache',
   timestamps: false,
-  underscored: false,
+  underscored: true,
   indexes: [
     { unique: true, fields: ['commit_id'] },
     { fields: ['is_available'] },

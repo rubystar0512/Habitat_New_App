@@ -65,7 +65,7 @@ const GitRepo = sequelize.define('GitRepo', {
 }, {
   tableName: 'git_repos',
   timestamps: true,
-  underscored: false,
+  underscored: true,
   indexes: [
     { unique: true, fields: ['repo_name'] },
     { fields: ['full_name'] },

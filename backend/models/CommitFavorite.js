@@ -36,7 +36,7 @@ const CommitFavorite = sequelize.define('CommitFavorite', {
 }, {
   tableName: 'commit_favorites',
   timestamps: true,
-  underscored: false,
+  underscored: true,
   indexes: [
     { unique: true, fields: ['user_id', 'commit_id'], name: 'unique_user_commit' },
     { fields: ['user_id'] },

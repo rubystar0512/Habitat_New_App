@@ -153,7 +153,7 @@ const Commit = sequelize.define('Commit', {
 }, {
   tableName: 'commits',
   timestamps: true,
-  underscored: false,
+  underscored: true,
   indexes: [
     { unique: true, fields: ['repo_id', 'base_commit'], name: 'unique_commit' },
     { fields: ['repo_id'] },

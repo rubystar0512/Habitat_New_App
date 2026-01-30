@@ -75,7 +75,7 @@ const CommitFileStatsCache = sequelize.define('CommitFileStatsCache', {
 }, {
   tableName: 'commit_file_stats_cache',
   timestamps: true,
-  underscored: false,
+  underscored: true,
   indexes: [
     { unique: true, fields: ['commit_id'] },
     { fields: ['single_file_200plus'] },

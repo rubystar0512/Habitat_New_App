@@ -50,7 +50,7 @@ const CommitTestAnalysis = sequelize.define('CommitTestAnalysis', {
 }, {
   tableName: 'commit_test_analysis',
   timestamps: true,
-  underscored: false,
+  underscored: true,
   indexes: [
     { unique: true, fields: ['commit_id'] },
     { fields: ['has_test_changes'] }

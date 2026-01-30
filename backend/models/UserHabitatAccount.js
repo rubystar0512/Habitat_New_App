@@ -74,7 +74,7 @@ const UserHabitatAccount = sequelize.define('UserHabitatAccount', {
 }, {
   tableName: 'user_habitat_accounts',
   timestamps: true,
-  underscored: false,
+  underscored: true,
   indexes: [
     { fields: ['user_id'] },
     { fields: ['account_name'] },

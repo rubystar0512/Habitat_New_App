@@ -28,7 +28,7 @@ const AccountRepoMapping = sequelize.define('AccountRepoMapping', {
 }, {
   tableName: 'account_repo_mappings',
   timestamps: false,
-  underscored: false,
+  underscored: true,
   indexes: [
     { unique: true, fields: ['account_id', 'repo_id'] },
     { fields: ['account_id'] },

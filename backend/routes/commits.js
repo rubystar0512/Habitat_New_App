@@ -97,7 +97,7 @@ router.get('/:id', async (req, res, next) => {
         },
         {
           model: CommitFile,
-          as: 'files',
+          as: 'commitFiles',
           attributes: ['id', 'filePath', 'fileName', 'additions', 'deletions', 'isTestFile', 'isDependencyFile']
         }
       ]

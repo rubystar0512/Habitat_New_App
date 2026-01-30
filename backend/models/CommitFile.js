@@ -57,7 +57,7 @@ const CommitFile = sequelize.define('CommitFile', {
 }, {
   tableName: 'commit_files',
   timestamps: true,
-  underscored: false,
+  underscored: true,
   indexes: [
     { unique: true, fields: ['commit_id', 'file_path'], name: 'unique_commit_file' },
     { fields: ['commit_id'] },

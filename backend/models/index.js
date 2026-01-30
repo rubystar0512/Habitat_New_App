@@ -28,7 +28,7 @@ MemoCommit.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
 User.hasMany(CommitFavorite, { foreignKey: 'user_id', as: 'favorites' });
 CommitFavorite.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
 
-User.hasMany(SuccessfulTask, { foreignKey: 'user_id', as: 'successfulTasks' });
+User.hasMany(SuccessfulTask, { foreignKey: 'user_id', as: 'submittedTasks' });
 SuccessfulTask.belongsTo(User, { foreignKey: 'user_id', as: 'submitter' });
 
 User.hasMany(SuccessfulTask, { foreignKey: 'approved_by', as: 'approvedTasks' });
@@ -37,7 +37,7 @@ SuccessfulTask.belongsTo(User, { foreignKey: 'approved_by', as: 'approver' });
 GitRepo.hasMany(Commit, { foreignKey: 'repo_id', as: 'commits' });
 Commit.belongsTo(GitRepo, { foreignKey: 'repo_id', as: 'repo' });
 
-Commit.hasMany(CommitFile, { foreignKey: 'commit_id', as: 'files' });
+Commit.hasMany(CommitFile, { foreignKey: 'commit_id', as: 'commitFiles' });
 CommitFile.belongsTo(Commit, { foreignKey: 'commit_id', as: 'commit' });
 
 Commit.hasOne(CommitDependencyAnalysis, { foreignKey: 'commit_id', as: 'dependencyAnalysis' });

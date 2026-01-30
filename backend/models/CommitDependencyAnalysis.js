@@ -40,7 +40,7 @@ const CommitDependencyAnalysis = sequelize.define('CommitDependencyAnalysis', {
 }, {
   tableName: 'commit_dependency_analysis',
   timestamps: true,
-  underscored: false,
+  underscored: true,
   indexes: [
     { unique: true, fields: ['commit_id'] },
     { fields: ['has_dependency_changes'] },

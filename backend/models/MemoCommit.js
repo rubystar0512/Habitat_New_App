@@ -36,7 +36,7 @@ const MemoCommit = sequelize.define('MemoCommit', {
 }, {
   tableName: 'memo_commits',
   timestamps: true,
-  underscored: false,
+  underscored: true,
   indexes: [
     { unique: true, fields: ['user_id', 'commit_id'] },
     { fields: ['user_id'] },
