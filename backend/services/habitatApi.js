@@ -26,6 +26,14 @@ const makeRequest = async (url, options = {}) => {
       };
     }
 
+    // Check content type - Habitat API returns CSV for unavailable-commits endpoint
+    const contentType = response.headers.get('content-type') || '';
+    if (contentType.includes('text/csv') || contentType.includes('text/plain')) {
+      const text = await response.text();
+      return { success: true, data: text };
+    }
+
+    // Otherwise, try to parse as JSON
     const data = await response.json();
     return { success: true, data };
   } catch (error) {
@@ -101,7 +109,7 @@ const getUnavailableCommits = async (apiToken, apiUrl, repoId) => {
     method: 'GET',
     headers: {
       'Authorization': `Bearer ${apiToken}`,
-      'Accept': 'application/json, text/plain, */*',
+      'Accept': 'text/csv, application/json, text/plain, */*',
       'User-Agent': 'HabitateWeb/1.0'
     }
   });
@@ -110,9 +118,13 @@ const getUnavailableCommits = async (apiToken, apiUrl, repoId) => {
     return result;
   }
 
+  // Habitat API returns CSV format, not JSON
+  // If result.data is a string, it's CSV; if it's an object, try to extract commits
+  const csvData = typeof result.data === 'string' ? result.data : (result.data?.commits || result.data || '');
+
   return {
     success: true,
-    commits: result.data?.commits || result.data || []
+    commits: csvData
   };
 };
 

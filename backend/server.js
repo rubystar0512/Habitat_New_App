@@ -6,6 +6,7 @@ const cors = require('cors');
 const { testConnection } = require('./config/database');
 const routes = require('./routes');
 const errorHandler = require('./middleware/errorHandler');
+const commitStatusCron = require('./services/commitStatusCron');
 
 const app = express();
 const server = http.createServer(app);
@@ -74,10 +75,18 @@ const startServer = async () => {
     }
 
     // Start listening
-    server.listen(PORT, () => {
+    server.listen(PORT, async () => {
       console.log(`🚀 Server running on port ${PORT}`);
       console.log(`📡 Socket.IO server ready`);
       console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
+      
+      // Start commit status cron job
+      try {
+        await commitStatusCron.start();
+        console.log(`⏰ Commit status cron job started`);
+      } catch (error) {
+        console.error('❌ Failed to start commit status cron:', error);
+      }
     });
   } catch (error) {
     console.error('❌ Failed to start server:', error);
@@ -90,6 +99,16 @@ startServer();
 // Graceful shutdown
 process.on('SIGTERM', () => {
   console.log('SIGTERM received, shutting down gracefully...');
+  commitStatusCron.stop();
+  server.close(() => {
+    console.log('Server closed');
+    process.exit(0);
+  });
+});
+
+process.on('SIGINT', () => {
+  console.log('SIGINT received, shutting down gracefully...');
+  commitStatusCron.stop();
   server.close(() => {
     console.log('Server closed');
     process.exit(0);
