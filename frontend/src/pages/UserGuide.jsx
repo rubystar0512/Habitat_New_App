@@ -412,6 +412,8 @@ const UserGuide = () => {
                                 'View commit details including scores and metadata',
                                 'Check commit availability for reservations',
                                 'Sort and organize commits for easy navigation',
+                                'Customize table columns to show/hide fields',
+                                'Active repositories are highlighted in the filter dropdown',
                               ]}
                               renderItem={(item) => (
                                 <List.Item style={{ border: 'none', padding: '6px 0' }}>
@@ -434,6 +436,48 @@ const UserGuide = () => {
                                 borderRadius: 8,
                               }}
                             />
+                            <Card
+                              style={{
+                                background: 'linear-gradient(135deg, #1e3a5f 0%, #1e293b 100%)',
+                                border: '1px solid #3b82f6',
+                                borderRadius: 8,
+                                marginTop: 12,
+                              }}
+                              bodyStyle={{ padding: 16 }}
+                            >
+                              <Space direction="vertical" size="small" style={{ width: '100%' }}>
+                                <Text strong style={{ color: '#f1f5f9' }}>
+                                  <SettingOutlined style={{ marginRight: 8, color: '#3b82f6' }} />
+                                  Column Customization
+                                </Text>
+                                <Text style={{ color: '#cbd5e1', fontSize: 13 }}>
+                                  Click the "Columns" button in the table header to customize which columns are displayed. 
+                                  Your preferences are saved automatically and will persist across sessions. You can show or hide 
+                                  most columns, but Actions and Status columns are always visible for essential functionality.
+                                </Text>
+                              </Space>
+                            </Card>
+                            <Card
+                              style={{
+                                background: 'linear-gradient(135deg, #3d2817 0%, #1e293b 100%)',
+                                border: '1px solid #f59e0b',
+                                borderRadius: 8,
+                                marginTop: 12,
+                              }}
+                              bodyStyle={{ padding: 16 }}
+                            >
+                              <Space direction="vertical" size="small" style={{ width: '100%' }}>
+                                <Text strong style={{ color: '#f1f5f9' }}>
+                                  <StarOutlined style={{ marginRight: 8, color: '#f59e0b' }} />
+                                  Active Repositories
+                                </Text>
+                                <Text style={{ color: '#cbd5e1', fontSize: 13 }}>
+                                  When filtering by repository, active repositories are highlighted with a green background 
+                                  and an "Active" tag. This makes it easy to identify which repositories are currently active 
+                                  and available for commits.
+                                </Text>
+                              </Space>
+                            </Card>
                           </Space>
                         ),
                       },
@@ -716,7 +760,8 @@ const UserGuide = () => {
                   <Row gutter={[16, 16]}>
                     {[
                       { title: 'Commits by Repository', desc: 'See commit distribution across different repositories', badge: 'All Users' },
-                      { title: 'Commit Score Distribution', desc: 'View how commits are distributed across difficulty levels', badge: 'All Users' },
+                      { title: 'Commit Score Distribution (Overall)', desc: 'View overall commit distribution across difficulty levels', badge: 'All Users' },
+                      { title: 'Commit Score Distribution by Repository', desc: 'Compare score distributions across different repositories with stacked bar charts', badge: 'All Users', isNew: true },
                       { title: 'Average Scores by Repository', desc: 'Compare habitat, suitability, and difficulty scores across repos', badge: 'All Users' },
                       { title: 'Earnings Over Time', desc: 'Track your earnings progression', badge: 'Team Only' },
                       { title: 'Earnings by Repository', desc: 'See which repositories generate the most earnings', badge: 'Team Only' },
@@ -726,7 +771,12 @@ const UserGuide = () => {
                       <Col xs={24} sm={12} lg={8} key={idx}>
                         <FeatureCard
                           icon={<BarChartOutlined />}
-                          title={item.title}
+                          title={
+                            <Space>
+                              {item.title}
+                              {item.isNew && <Tag color="green" style={{ fontSize: 10 }}>NEW</Tag>}
+                            </Space>
+                          }
                           description={item.desc}
                           badge={item.badge}
                           badgeColor={item.badge === 'Admin Only' ? 'red' : item.badge === 'Team Only' ? 'blue' : 'green'}
@@ -746,6 +796,48 @@ const UserGuide = () => {
                       borderRadius: 8,
                     }}
                   />
+                  <Card
+                    style={{
+                      background: 'linear-gradient(135deg, #1e3a5f 0%, #1e293b 100%)',
+                      border: '1px solid #3b82f6',
+                      borderRadius: 8,
+                      marginTop: 16,
+                    }}
+                    bodyStyle={{ padding: 16 }}
+                  >
+                    <Space direction="vertical" size="small" style={{ width: '100%' }}>
+                      <Text strong style={{ color: '#f1f5f9' }}>
+                        <InfoCircleOutlined style={{ marginRight: 8, color: '#3b82f6' }} />
+                        Per-Repository Analysis
+                      </Text>
+                      <Text style={{ color: '#cbd5e1', fontSize: 13 }}>
+                        The new "Commit Score Distribution by Repository" chart provides a detailed breakdown of score 
+                        distributions for each repository. This helps you identify which repositories have commits in 
+                        different difficulty ranges, making it easier to find suitable commits for your skill level.
+                      </Text>
+                    </Space>
+                  </Card>
+                  <Card
+                    style={{
+                      background: 'linear-gradient(135deg, #3d2817 0%, #1e293b 100%)',
+                      border: '1px solid #f59e0b',
+                      borderRadius: 8,
+                      marginTop: 12,
+                    }}
+                    bodyStyle={{ padding: 16 }}
+                  >
+                    <Space direction="vertical" size="small" style={{ width: '100%' }}>
+                      <Text strong style={{ color: '#f1f5f9' }}>
+                        <StarOutlined style={{ marginRight: 8, color: '#f59e0b' }} />
+                        Cutoff Date Handling
+                      </Text>
+                      <Text style={{ color: '#cbd5e1', fontSize: 13 }}>
+                        Statistics now respect repository cutoff dates. If a repository has a cutoff date configured, 
+                        only commits after that date are included in the statistics calculations. This ensures accurate 
+                        and relevant data for each repository based on their specific requirements.
+                      </Text>
+                    </Space>
+                  </Card>
                 </Space>
               </Card>
             </div>
@@ -834,11 +926,14 @@ const UserGuide = () => {
                 <Row gutter={[16, 16]}>
                   {[
                     'Use the search and filter features to quickly find commits you need',
+                    'Customize your commits table columns to show only the fields you need',
+                    'Look for active repositories highlighted in green when filtering',
                     'Keep your Habitat accounts healthy by monitoring their status regularly',
                     'Submit successful tasks promptly to maintain accurate statistics',
                     'Use memos to track important information about commits',
                     'Set up auto-reservation rules to save time on manual reservations',
                     'Check the Statistics page regularly to track your progress',
+                    'Use the per-repository score distribution chart to find suitable commits',
                     'Use Markdown in task descriptions for better formatting',
                     'Keep your account information up to date',
                   ].map((tip, idx) => (

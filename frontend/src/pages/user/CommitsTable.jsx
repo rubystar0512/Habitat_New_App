@@ -34,6 +34,7 @@ import {
   CloseCircleOutlined,
   ExclamationCircleOutlined,
   ClockCircleOutlined,
+  SettingOutlined,
 } from '@ant-design/icons';
 import api from '../../config/api';
 import { useAuth } from '../../contexts/AuthContext';
@@ -68,6 +69,41 @@ const CommitsTable = () => {
   const [selectedCommit, setSelectedCommit] = useState(null);
   const [selectedAccountId, setSelectedAccountId] = useState(null);
   const [actionLoading, setActionLoading] = useState({});
+  const [columnCustomizeVisible, setColumnCustomizeVisible] = useState(false);
+  
+  // Column visibility state - load from localStorage or use defaults
+  const [visibleColumns, setVisibleColumns] = useState(() => {
+    const saved = localStorage.getItem('commitsTable_visibleColumns');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        // Ensure required columns are always visible
+        parsed.actions = true;
+        parsed.status = true;
+        return parsed;
+      } catch (e) {
+        // If parsing fails, use defaults
+      }
+    }
+    // Default: all columns visible
+    return {
+      id: true,
+      repo: true,
+      baseCommit: true,
+      mergedCommit: true,
+      prNumber: true,
+      fileChanges: true,
+      additions: true,
+      deletions: true,
+      habitateScore: isAdmin(),
+      difficultyScore: isAdmin(),
+      suitabilityScore: isAdmin(),
+      flags: true,
+      status: true,
+      actions: true,
+      message: true,
+    };
+  });
 
   const [filters, setFilters] = useState({
     repo_id: null,
@@ -81,8 +117,6 @@ const CommitsTable = () => {
     max_additions: null,
     min_deletions: null,
     max_deletions: null,
-    min_net_change: null,
-    max_net_change: null,
     min_file_changes: null,
     max_file_changes: null,
     is_merge: null,
@@ -191,7 +225,6 @@ const CommitsTable = () => {
         'mergedCommit': 'merged_commit',
         'commitDate': 'commit_date',
         'fileChanges': 'file_changes',
-        'netChange': 'net_change',
         'habitateScore': 'habitate_score',
         'difficultyScore': 'difficulty_score',
         'suitabilityScore': 'suitability_score',
@@ -226,8 +259,6 @@ const CommitsTable = () => {
       max_additions: null,
       min_deletions: null,
       max_deletions: null,
-      min_net_change: null,
-      max_net_change: null,
       min_file_changes: null,
       max_file_changes: null,
       is_merge: null,
@@ -562,18 +593,6 @@ const CommitsTable = () => {
         sorter: true,
         render: (val) => <span style={{ color: '#ff4d4f' }}>-{val || 0}</span>,
       },
-      {
-        title: 'Net Change',
-        dataIndex: 'netChange',
-        key: 'netChange',
-        width: 100,
-        align: 'center',
-        sorter: true,
-        render: (val) => {
-          const color = val >= 0 ? '#52c41a' : '#ff4d4f';
-          return <span style={{ color }}>{val >= 0 ? '+' : ''}{val || 0}</span>;
-        },
-      },
     ];
 
     // Add score columns only for admins
@@ -773,8 +792,56 @@ const CommitsTable = () => {
       }
     );
 
-    return baseColumns;
-  }, [isAdmin]);
+    // Filter columns based on visibility settings
+    return baseColumns.filter(col => {
+      const key = col.key;
+      // Always show actions and status (required columns)
+      if (key === 'actions' || key === 'status') {
+        return true;
+      }
+      // Check visibility for other columns
+      return visibleColumns[key] !== false;
+    });
+  }, [isAdmin, visibleColumns]);
+
+  // Save visible columns to localStorage when changed
+  useEffect(() => {
+    localStorage.setItem('commitsTable_visibleColumns', JSON.stringify(visibleColumns));
+  }, [visibleColumns]);
+
+  // Column definitions for customization modal
+  const columnDefinitions = useMemo(() => [
+    { key: 'id', label: 'ID', defaultVisible: true },
+    { key: 'repo', label: 'Repository', defaultVisible: true },
+    { key: 'baseCommit', label: 'Base Commit', defaultVisible: true },
+    { key: 'mergedCommit', label: 'Merged Commit', defaultVisible: true },
+    { key: 'prNumber', label: 'PR #', defaultVisible: true },
+    { key: 'fileChanges', label: 'Files', defaultVisible: true },
+    { key: 'additions', label: 'Additions', defaultVisible: true },
+    { key: 'deletions', label: 'Deletions', defaultVisible: true },
+    { key: 'habitateScore', label: 'Habitat Score', defaultVisible: isAdmin() },
+    { key: 'difficultyScore', label: 'Difficulty', defaultVisible: isAdmin() },
+    { key: 'suitabilityScore', label: 'Suitability', defaultVisible: isAdmin() },
+    { key: 'flags', label: 'Flags', defaultVisible: true },
+    { key: 'status', label: 'Status', defaultVisible: true },
+    { key: 'actions', label: 'Actions', defaultVisible: true },
+    { key: 'message', label: 'Message', defaultVisible: true },
+  ], [isAdmin]);
+
+  const handleColumnVisibilityChange = (key, checked) => {
+    setVisibleColumns(prev => ({
+      ...prev,
+      [key]: checked
+    }));
+  };
+
+  const handleResetColumns = () => {
+    const defaults = {};
+    columnDefinitions.forEach(col => {
+      defaults[col.key] = col.defaultVisible;
+    });
+    setVisibleColumns(defaults);
+  };
 
   const activeFiltersCount = useMemo(() => {
     let count = 0;
@@ -827,6 +894,13 @@ const CommitsTable = () => {
               >
                 Refresh
               </Button>
+              <Button
+                icon={<SettingOutlined />}
+                onClick={() => setColumnCustomizeVisible(true)}
+                title="Customize Columns"
+              >
+                Columns
+              </Button>
             </Space>
           </Col>
         </Row>
@@ -854,7 +928,17 @@ const CommitsTable = () => {
                   onChange={(value) => handleFilterChange('repo_id', value)}
                 >
                   {repos.map(repo => (
-                    <Option key={repo.id} value={repo.id}>{repo.fullName}</Option>
+                    <Option 
+                      key={repo.id} 
+                      value={repo.id}
+                      style={{
+                        backgroundColor: repo.isActive ? 'rgba(22, 163, 74, 0.1)' : 'transparent',
+                        fontWeight: repo.isActive ? 600 : 'normal',
+                      }}
+                    >
+                      {repo.fullName}
+                      {repo.isActive && <Tag color="success" style={{ marginLeft: 8, fontSize: 10 }}>Active</Tag>}
+                    </Option>
                   ))}
                 </Select>
               </Col>
@@ -991,27 +1075,6 @@ const CommitsTable = () => {
                 </Input.Group>
               </Col>
 
-              <Col xs={24} sm={12} md={8} lg={6}>
-                <Text style={{ color: 'rgb(148, 163, 184)', fontSize: 12, display: 'block', marginBottom: 4 }}>
-                  Net Change
-                </Text>
-                <Input.Group compact>
-                  <InputNumber
-                    size="large"
-                    placeholder="Min"
-                    style={{ width: '50%' }}
-                    value={filters.min_net_change}
-                    onChange={(value) => handleFilterChange('min_net_change', value)}
-                  />
-                  <InputNumber
-                    size="large"
-                    placeholder="Max"
-                    style={{ width: '50%' }}
-                    value={filters.max_net_change}
-                    onChange={(value) => handleFilterChange('max_net_change', value)}
-                  />
-                </Input.Group>
-              </Col>
 
               <Col xs={24} sm={12} md={8} lg={6}>
                 <Text style={{ color: 'rgb(148, 163, 184)', fontSize: 12, display: 'block', marginBottom: 4 }}>
@@ -1280,6 +1343,44 @@ const CommitsTable = () => {
             </Select>
           </div>
         )}
+      </Modal>
+
+      {/* Column Customization Modal */}
+      <Modal
+        title="Customize Columns"
+        open={columnCustomizeVisible}
+        onCancel={() => setColumnCustomizeVisible(false)}
+        onOk={() => setColumnCustomizeVisible(false)}
+        okText="Done"
+        cancelButtonProps={{ style: { display: 'none' } }}
+        width={500}
+        style={{ top: 100 }}
+      >
+        <Space direction="vertical" size="middle" style={{ width: '100%', marginTop: 16 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+            <Text strong>Select columns to display:</Text>
+            <Button type="link" size="small" onClick={handleResetColumns}>
+              Reset to Defaults
+            </Button>
+          </div>
+          <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
+            <Space direction="vertical" size="small" style={{ width: '100%' }}>
+              {columnDefinitions.map(col => (
+                <Checkbox
+                  key={col.key}
+                  checked={visibleColumns[col.key] !== false}
+                  onChange={(e) => handleColumnVisibilityChange(col.key, e.target.checked)}
+                  disabled={col.key === 'actions' || col.key === 'status'} // Always show actions and status
+                >
+                  {col.label}
+                  {col.key === 'actions' || col.key === 'status' ? (
+                    <Text type="secondary" style={{ fontSize: 11, marginLeft: 8 }}>(Required)</Text>
+                  ) : null}
+                </Checkbox>
+              ))}
+            </Space>
+          </div>
+        </Space>
       </Modal>
     </div>
   );
