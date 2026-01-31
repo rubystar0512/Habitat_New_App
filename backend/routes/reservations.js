@@ -1,6 +1,6 @@
 const express = require('express');
 const { Op } = require('sequelize');
-const { Reservation, Commit, UserHabitatAccount } = require('../models');
+const { Reservation, Commit, UserHabitatAccount, GitRepo } = require('../models');
 const { authenticateToken } = require('../middleware/auth');
 const { createReservationRules, idParamRule, paginationRules, handleValidationErrors } = require('../middleware/validation');
 const habitatApiService = require('../services/habitatApi');
@@ -219,6 +219,154 @@ router.delete('/:id', idParamRule, handleValidationErrors, async (req, res, next
     });
 
     res.json({ message: 'Reservation cancelled successfully' });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Sync reservations from Habitat API
+router.post('/sync', async (req, res, next) => {
+  try {
+    // Get all user's active accounts
+    const accounts = await UserHabitatAccount.findAll({
+      where: { userId: req.userId, isActive: true },
+      attributes: ['id', 'accountName', 'apiToken', 'apiUrl']
+    });
+
+    if (accounts.length === 0) {
+      return res.json({ 
+        message: 'No active accounts found', 
+        synced: 0,
+        updated: 0,
+        errors: []
+      });
+    }
+
+    let totalSynced = 0;
+    let totalUpdated = 0;
+    const errors = [];
+
+    // Get repository mappings (habitat_repo_id -> local repo_id)
+    const repos = await GitRepo.findAll({
+      where: { habitatRepoId: { [Op.ne]: null } },
+      attributes: ['id', 'habitatRepoId']
+    });
+    const repoMap = new Map();
+    repos.forEach(repo => {
+      repoMap.set(repo.habitatRepoId, repo.id);
+    });
+
+    // Sync reservations from each account
+    for (const account of accounts) {
+      try {
+        const apiUrl = account.apiUrl || process.env.HABITAT_API_URL || 'https://code.habitat.inc';
+        
+        // Fetch reservations from Habitat API
+        const result = await habitatApiService.getMyReservations(
+          account.apiToken,
+          apiUrl,
+          false // include_released = false (only active reservations)
+        );
+
+        if (!result.success) {
+          errors.push({ 
+            accountId: account.id, 
+            accountName: account.accountName,
+            error: result.error || 'Failed to fetch reservations' 
+          });
+          continue;
+        }
+
+        const remoteReservations = result.reservations || [];
+
+        // Process each remote reservation
+        for (const remoteRes of remoteReservations) {
+          try {
+            // Find the local repository
+            const repoId = repoMap.get(remoteRes.repository_id);
+            if (!repoId) {
+              // Repository not found in our database, skip
+              continue;
+            }
+
+            // Find the commit by base_commit hash
+            const commit = await Commit.findOne({
+              where: {
+                repoId: repoId,
+                baseCommit: remoteRes.commit_hash
+              }
+            });
+
+            if (!commit) {
+              // Commit not found in our database, skip
+              continue;
+            }
+
+            // Check if reservation already exists
+            const existingReservation = await Reservation.findOne({
+              where: {
+                userId: req.userId,
+                accountId: account.id,
+                commitId: commit.id,
+                habitatReservationId: remoteRes.id
+              }
+            });
+
+            const reservedAt = remoteRes.reserved_at ? new Date(remoteRes.reserved_at) : new Date();
+            const expiresAt = remoteRes.expires_at ? new Date(remoteRes.expires_at) : null;
+            const releasedAt = remoteRes.released_at ? new Date(remoteRes.released_at) : null;
+            const status = releasedAt ? 'released' : 'reserved';
+
+            if (existingReservation) {
+              // Update existing reservation
+              await existingReservation.update({
+                habitatReservationId: remoteRes.id,
+                status: status,
+                expiresAt: expiresAt,
+                reservedAt: reservedAt,
+                cancelledAt: releasedAt // Maps to released_at in database
+              });
+              totalUpdated++;
+            } else {
+              // Create new reservation
+              await Reservation.create({
+                userId: req.userId,
+                accountId: account.id,
+                commitId: commit.id,
+                habitatReservationId: remoteRes.id,
+                status: status,
+                expiresAt: expiresAt,
+                reservedAt: reservedAt,
+                cancelledAt: releasedAt // Maps to released_at in database
+              });
+              totalSynced++;
+            }
+          } catch (commitError) {
+            console.error(`Error processing reservation ${remoteRes.id}:`, commitError);
+            errors.push({
+              accountId: account.id,
+              accountName: account.accountName,
+              reservationId: remoteRes.id,
+              error: commitError.message
+            });
+          }
+        }
+      } catch (accountError) {
+        console.error(`Error syncing reservations for account ${account.id}:`, accountError);
+        errors.push({ 
+          accountId: account.id, 
+          accountName: account.accountName,
+          error: accountError.message 
+        });
+      }
+    }
+
+    res.json({
+      message: `Synced ${totalSynced} new reservations, updated ${totalUpdated} existing reservations`,
+      synced: totalSynced,
+      updated: totalUpdated,
+      errors: errors.length > 0 ? errors : undefined
+    });
   } catch (error) {
     next(error);
   }

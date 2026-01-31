@@ -22,8 +22,9 @@ const PORT = process.env.PORT || 5000;
 
 // Middleware
 app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// Increase body parser limit to 50MB for large patch files
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Health check
 app.get('/health', (req, res) => {

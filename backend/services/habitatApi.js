@@ -116,13 +116,16 @@ const getUnavailableCommits = async (apiToken, apiUrl, repoId) => {
   };
 };
 
-const getMyReservations = async (apiToken, apiUrl) => {
-  const url = `${apiUrl}/api/my-reservations`;
+const getMyReservations = async (apiToken, apiUrl, includeReleased = false) => {
+  // Use the correct endpoint: /api/v1/commit-reservations/my-reservations
+  const url = `${apiUrl.replace(/\/$/, '')}/api/v1/commit-reservations/my-reservations?include_released=${includeReleased}`;
   
   const result = await makeRequest(url, {
     method: 'GET',
     headers: {
-      'Authorization': `Bearer ${apiToken}`
+      'Authorization': `Bearer ${apiToken}`,
+      'Accept': 'application/json, text/plain, */*',
+      'User-Agent': 'HabitateWeb/1.0'
     }
   });
 
@@ -130,9 +133,12 @@ const getMyReservations = async (apiToken, apiUrl) => {
     return result;
   }
 
+  // Handle different response formats - API might return array directly or wrapped in object
+  const reservations = Array.isArray(result.data) ? result.data : (result.data?.reservations || []);
+
   return {
     success: true,
-    reservations: result.data.reservations || []
+    reservations: reservations
   };
 };
 

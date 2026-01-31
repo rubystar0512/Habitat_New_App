@@ -4,6 +4,7 @@ const { Commit, GitRepo, CommitFile, CommitFileStatsCache, Reservation, MemoComm
 const { authenticateToken } = require('../middleware/auth');
 const { commitFilterRules, paginationRules, handleValidationErrors, idParamRule } = require('../middleware/validation');
 const { claim, deleteReservation } = require('../services/habitatApi');
+const { sequelize } = require('../config/database');
 
 const router = express.Router();
 
@@ -13,6 +14,19 @@ router.use(authenticateToken);
 // Get commits with filtering
 router.get('/', commitFilterRules, paginationRules, handleValidationErrors, async (req, res, next) => {
   try {
+    // Optimize MySQL sort buffer for large dataset sorting
+    // Set session variables to increase sort buffer size (16MB instead of default 256KB)
+    try {
+      await sequelize.query(`
+        SET SESSION sort_buffer_size = 16777216;
+        SET SESSION read_buffer_size = 2097152;
+        SET SESSION read_rnd_buffer_size = 4194304;
+      `, { type: sequelize.QueryTypes.RAW });
+    } catch (optError) {
+      // If setting session variables fails, log but continue
+      console.warn('Failed to set MySQL optimization variables:', optError.message);
+    }
+
     const limit = req.query.limit || 50;
     const offset = req.query.offset || 0;
 
@@ -105,6 +119,47 @@ router.get('/', commitFilterRules, paginationRules, handleValidationErrors, asyn
       }
     ];
 
+    // Handle search parameter (searches across multiple fields)
+    if (req.query.search) {
+      const searchTerm = req.query.search.trim();
+      // Check if it looks like a commit hash (7-40 hex characters)
+      if (/^[a-f0-9]{7,40}$/i.test(searchTerm)) {
+        // Search by commit hash (partial match on base_commit, merged_commit, or source_sha)
+        where[Op.or] = [
+          { baseCommit: { [Op.like]: `%${searchTerm}%` } },
+          { mergedCommit: { [Op.like]: `%${searchTerm}%` } },
+          { sourceSha: { [Op.like]: `%${searchTerm}%` } }
+        ];
+      } else {
+        // Search by text (repo name, message, author, etc.)
+        where[Op.or] = [
+          { message: { [Op.like]: `%${searchTerm}%` } },
+          { author: { [Op.like]: `%${searchTerm}%` } }
+        ];
+        // Also search in repo name - modify existing repo include
+        const repoInclude = include.find(inc => inc.as === 'repo');
+        if (repoInclude) {
+          // Modify existing repo include to add search
+          if (repoInclude.where) {
+            const existingOr = repoInclude.where[Op.or] || [];
+            repoInclude.where[Op.or] = [
+              ...existingOr,
+              { repoName: { [Op.like]: `%${searchTerm}%` } },
+              { fullName: { [Op.like]: `%${searchTerm}%` } }
+            ];
+          } else {
+            repoInclude.where = {
+              [Op.or]: [
+                { repoName: { [Op.like]: `%${searchTerm}%` } },
+                { fullName: { [Op.like]: `%${searchTerm}%` } }
+              ]
+            };
+            repoInclude.required = false;
+          }
+        }
+      }
+    }
+
     // Handle file pattern filters using cache table
     if (req.query.single_file_200plus === 'true') {
       include.push({
@@ -162,12 +217,9 @@ router.get('/', commitFilterRules, paginationRules, handleValidationErrors, asyn
         'author': 'author',
       };
       const dbField = fieldMap[sortField] || sortField;
-      // Use col() to reference the database column directly, avoiding Sequelize's attribute mapping
-      order = [[col(`Commit.${dbField}`), sortOrder]];
+      order = [[dbField, sortOrder]];
     }
 
-    // Optimize: For large datasets, use separate count query to avoid sorting all rows
-    // Build count options without required joins to avoid unnecessary sorting
     const countIncludes = include.filter(inc => !inc.required);
     const countOptions = {
       where,
@@ -177,16 +229,20 @@ router.get('/', commitFilterRules, paginationRules, handleValidationErrors, asyn
 
     const count = await Commit.count(countOptions);
 
-    // For the actual data query, ensure we're using indexed columns for sorting
+    const hasJoins = include.length > 0;
     const queryOptions = {
       where,
       include,
       limit,
       offset,
       order,
-      // Add subQuery to optimize joins when sorting
-      subQuery: false
+      subQuery: hasJoins
     };
+
+    const MAX_SAFE_OFFSET = 50000;
+    if (offset > MAX_SAFE_OFFSET) {
+      console.warn(`Large offset detected: ${offset}. This may cause sort memory issues.`);
+    }
 
     const commits = await Commit.findAll(queryOptions);
 

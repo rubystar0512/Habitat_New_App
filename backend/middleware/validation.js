@@ -81,15 +81,15 @@ const createReservationRules = [
 
 // Successful task validations
 const createSuccessfulTaskRules = [
-  body('commit_id').isInt({ min: 1 }).withMessage('Valid commit_id is required'),
   body('task_name').notEmpty().withMessage('Task name is required'),
   body('task_description').notEmpty().withMessage('Task description is required'),
-  body('git_base_commit').isLength({ min: 40, max: 40 }).withMessage('Invalid git_base_commit'),
-  body('merge_commit').isLength({ min: 40, max: 40 }).withMessage('Invalid merge_commit'),
+  body('git_base_commit').notEmpty().withMessage('git_base_commit is required').isLength({ min: 7, max: 40 }).withMessage('git_base_commit must be 7-40 characters (commit hash)'),
+  body('merge_commit').notEmpty().withMessage('merge_commit is required').isLength({ min: 7, max: 40 }).withMessage('merge_commit must be 7-40 characters (commit hash)'),
   body('golden_patch').notEmpty().withMessage('Golden patch is required'),
   body('test_patch').notEmpty().withMessage('Test patch is required'),
   body('base_patch').optional(),
   body('pr_number').optional().isInt({ min: 1 }),
+  body('hints').optional().isString(),
   body('ai_success_rate').optional().isFloat({ min: 0, max: 100 }),
   body('payout_amount').optional().isFloat({ min: 0 })
 ];

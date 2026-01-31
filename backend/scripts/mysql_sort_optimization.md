@@ -15,31 +15,43 @@ mysql -u habitate -p habitate_db < backend/scripts/add_sort_indexes.sql
 
 This will significantly improve sort performance by allowing MySQL to use indexes instead of sorting all rows in memory.
 
-## Solution 2: Increase MySQL Sort Buffer Size
+## Solution 2: Increase MySQL Sort Buffer Size (RECOMMENDED)
 
-If indexes don't solve the issue, increase MySQL's sort buffer size.
+If indexes don't solve the issue, increase MySQL's sort buffer size. **This is the most effective solution.**
 
-### Temporary (Current Session Only)
-```sql
-SET SESSION sort_buffer_size = 16777216; -- 16MB
-```
+### Permanent Configuration (RECOMMENDED)
 
-### Permanent Configuration
+1. Edit MySQL configuration file:
+   - Ubuntu/Debian: `/etc/mysql/my.cnf` or `/etc/mysql/mysql.conf.d/mysqld.cnf`
+   - CentOS/RHEL: `/etc/my.cnf`
+   - Docker: Mount a custom `my.cnf` file
 
-1. Edit MySQL configuration file (usually `/etc/mysql/my.cnf` or `/etc/my.cnf`):
+2. Add or update these settings in the `[mysqld]` section:
 ```ini
 [mysqld]
 sort_buffer_size = 16M
 read_buffer_size = 2M
 read_rnd_buffer_size = 4M
+max_sort_length = 1024
 ```
 
-2. Restart MySQL:
+3. Restart MySQL:
 ```bash
 sudo systemctl restart mysql
 # or
 sudo service mysql restart
+# or for Docker
+docker restart <mysql-container-name>
 ```
+
+### Temporary (Current Session Only)
+```sql
+SET SESSION sort_buffer_size = 16777216; -- 16MB
+SET SESSION read_buffer_size = 2097152; -- 2MB
+SET SESSION read_rnd_buffer_size = 4194304; -- 4MB
+```
+
+**Note:** The backend code attempts to set these session variables automatically, but due to Sequelize's connection pooling, this may not always work. **Permanent configuration is recommended.**
 
 ### Recommended Values
 - **sort_buffer_size**: 8M - 16M (default is usually 256K-2M)

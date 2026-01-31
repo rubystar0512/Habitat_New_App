@@ -36,6 +36,7 @@ import {
   ClockCircleOutlined,
 } from '@ant-design/icons';
 import api from '../../config/api';
+import { useAuth } from '../../contexts/AuthContext';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
 
@@ -47,6 +48,7 @@ const { RangePicker } = DatePicker;
 const { Panel } = Collapse;
 
 const CommitsTable = () => {
+  const { isAdmin } = useAuth();
   const [commits, setCommits] = useState([]);
   const [repos, setRepos] = useState([]);
   const [accounts, setAccounts] = useState([]);
@@ -56,7 +58,10 @@ const CommitsTable = () => {
     current: 1,
     pageSize: 50,
   });
-  const [sortField, setSortField] = useState('habitate_score');
+  const [sortField, setSortField] = useState(() => {
+    // Default sort field based on user role
+    return isAdmin() ? 'habitate_score' : 'commit_date';
+  });
   const [sortOrder, setSortOrder] = useState('DESC');
   const [showFilters, setShowFilters] = useState(false);
   const [reserveModalVisible, setReserveModalVisible] = useState(false);
@@ -197,7 +202,7 @@ const CommitsTable = () => {
       setSortOrder(newSorter.order === 'ascend' ? 'ASC' : 'DESC');
     } else {
       // Reset to default if no sorter
-      setSortField('habitate_score');
+      setSortField(isAdmin() ? 'habitate_score' : 'commit_date');
       setSortOrder('DESC');
     }
     setPagination(newPagination);
@@ -355,407 +360,421 @@ const CommitsTable = () => {
     }
   };
 
-  const columns = [
-    {
-      title: 'ID',
-      dataIndex: 'id',
-      key: 'id',
-      width: 80,
-      sorter: true,
-    },
-    {
-      title: 'Repository',
-      key: 'repo',
-      width: 180,
-      fixed: 'left',
-      sorter: false,
-      render: (_, record) => record.repo?.fullName || record.repo?.repoName || '-',
-    },
-    {
-      title: 'Base Commit',
-      dataIndex: 'baseCommit',
-      key: 'baseCommit',
-      width: 180,
-      fixed: 'left',
-      sorter: true,
-      render: (hash, record) => {
-        if (!hash) return '-';
-        const repoUrl = record.repo?.fullName ? `https://github.com/${record.repo.fullName}` : '';
-        const commitUrl = repoUrl ? `${repoUrl}/commit/${hash}` : '';
-        const handleCopy = async (e) => {
-          e.stopPropagation();
-          try {
-            await navigator.clipboard.writeText(hash);
-            message.success('Commit hash copied!');
-          } catch (err) {
-            // Fallback for older browsers
-            const textArea = document.createElement('textarea');
-            textArea.value = hash;
-            textArea.style.position = 'fixed';
-            textArea.style.opacity = '0';
-            document.body.appendChild(textArea);
-            textArea.select();
+  const columns = useMemo(() => {
+    const baseColumns = [
+      {
+        title: 'ID',
+        dataIndex: 'id',
+        key: 'id',
+        width: 80,
+        sorter: true,
+      },
+      {
+        title: 'Repository',
+        key: 'repo',
+        width: 180,
+        fixed: 'left',
+        sorter: false,
+        render: (_, record) => record.repo?.fullName || record.repo?.repoName || '-',
+      },
+      {
+        title: 'Base Commit',
+        dataIndex: 'baseCommit',
+        key: 'baseCommit',
+        width: 180,
+        fixed: 'left',
+        sorter: true,
+        render: (hash, record) => {
+          if (!hash) return '-';
+          const repoUrl = record.repo?.fullName ? `https://github.com/${record.repo.fullName}` : '';
+          const commitUrl = repoUrl ? `${repoUrl}/commit/${hash}` : '';
+          const handleCopy = async (e) => {
+            e.stopPropagation();
             try {
-              document.execCommand('copy');
+              await navigator.clipboard.writeText(hash);
               message.success('Commit hash copied!');
-            } catch (err2) {
-              message.error('Failed to copy hash');
+            } catch (err) {
+              // Fallback for older browsers
+              const textArea = document.createElement('textarea');
+              textArea.value = hash;
+              textArea.style.position = 'fixed';
+              textArea.style.opacity = '0';
+              document.body.appendChild(textArea);
+              textArea.select();
+              try {
+                document.execCommand('copy');
+                message.success('Commit hash copied!');
+              } catch (err2) {
+                message.error('Failed to copy hash');
+              }
+              document.body.removeChild(textArea);
             }
-            document.body.removeChild(textArea);
-          }
-        };
-        return (
-          <Space size="small">
-            <code style={{ fontSize: 11 }}>{hash.substring(0, 8)}</code>
-            <Tooltip title="Copy full hash">
-              <Button
-                type="text"
-                size="small"
-                icon={<CopyOutlined />}
-                onClick={handleCopy}
-                style={{ padding: '0 4px', height: 'auto' }}
-              />
-            </Tooltip>
-            {commitUrl && (
-              <Tooltip title="Open on GitHub">
+          };
+          return (
+            <Space size="small">
+              <code style={{ fontSize: 11 }}>{hash.substring(0, 8)}</code>
+              <Tooltip title="Copy full hash">
                 <Button
                   type="text"
                   size="small"
-                  icon={<LinkOutlined />}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    window.open(commitUrl, '_blank');
-                  }}
+                  icon={<CopyOutlined />}
+                  onClick={handleCopy}
                   style={{ padding: '0 4px', height: 'auto' }}
                 />
               </Tooltip>
-            )}
-          </Space>
-        );
-      },
-    },
-    {
-      title: 'Merged Commit',
-      dataIndex: 'mergedCommit',
-      key: 'mergedCommit',
-      width: 180,
-      fixed: 'left',
-      sorter: true,
-      render: (hash, record) => {
-        if (!hash) return '-';
-        const repoUrl = record.repo?.fullName ? `https://github.com/${record.repo.fullName}` : '';
-        const commitUrl = repoUrl ? `${repoUrl}/commit/${hash}` : '';
-        const handleCopy = async (e) => {
-          e.stopPropagation();
-          try {
-            await navigator.clipboard.writeText(hash);
-            message.success('Commit hash copied!');
-          } catch (err) {
-            // Fallback for older browsers
-            const textArea = document.createElement('textarea');
-            textArea.value = hash;
-            textArea.style.position = 'fixed';
-            textArea.style.opacity = '0';
-            document.body.appendChild(textArea);
-            textArea.select();
-            try {
-              document.execCommand('copy');
-              message.success('Commit hash copied!');
-            } catch (err2) {
-              message.error('Failed to copy hash');
-            }
-            document.body.removeChild(textArea);
-          }
-        };
-        return (
-          <Space size="small">
-            <code style={{ fontSize: 11 }}>{hash.substring(0, 8)}</code>
-            <Tooltip title="Copy full hash">
-              <Button
-                type="text"
-                size="small"
-                icon={<CopyOutlined />}
-                onClick={handleCopy}
-                style={{ padding: '0 4px', height: 'auto' }}
-              />
-            </Tooltip>
-            {commitUrl && (
-              <Tooltip title="Open on GitHub">
-                <Button
-                  type="text"
-                  size="small"
-                  icon={<LinkOutlined />}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    window.open(commitUrl, '_blank');
-                  }}
-                  style={{ padding: '0 4px', height: 'auto' }}
-                />
-              </Tooltip>
-            )}
-          </Space>
-        );
-      },
-    },
-    {
-      title: 'PR #',
-      dataIndex: 'prNumber',
-      key: 'prNumber',
-      width: 120,
-      fixed: 'left',
-      align: 'center',
-      sorter: true,
-      render: (num, record) => {
-        if (!num) return '-';
-        const repoUrl = record.repo?.fullName ? `https://github.com/${record.repo.fullName}` : '';
-        const prUrl = repoUrl ? `${repoUrl}/pull/${num}` : '';
-        return (
-          <Space size="small">
-            <span>{num}</span>
-            {prUrl && (
-              <Tooltip title="Open PR on GitHub">
-                <Button
-                  type="text"
-                  size="small"
-                  icon={<LinkOutlined />}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    window.open(prUrl, '_blank');
-                  }}
-                  style={{ padding: '0 4px', height: 'auto' }}
-                />
-              </Tooltip>
-            )}
-          </Space>
-        );
-      },
-    },
-    {
-      title: 'Files',
-      dataIndex: 'fileChanges',
-      key: 'fileChanges',
-      width: 80,
-      align: 'center',
-      sorter: true,
-    },
-    {
-      title: 'Additions',
-      dataIndex: 'additions',
-      key: 'additions',
-      width: 100,
-      align: 'center',
-      sorter: true,
-      render: (val) => <span style={{ color: '#52c41a' }}>+{val || 0}</span>,
-    },
-    {
-      title: 'Deletions',
-      dataIndex: 'deletions',
-      key: 'deletions',
-      width: 100,
-      align: 'center',
-      sorter: true,
-      render: (val) => <span style={{ color: '#ff4d4f' }}>-{val || 0}</span>,
-    },
-    {
-      title: 'Net Change',
-      dataIndex: 'netChange',
-      key: 'netChange',
-      width: 100,
-      align: 'center',
-      sorter: true,
-      render: (val) => {
-        const color = val >= 0 ? '#52c41a' : '#ff4d4f';
-        return <span style={{ color }}>{val >= 0 ? '+' : ''}{val || 0}</span>;
-      },
-    },
-    {
-      title: 'Habitat Score',
-      dataIndex: 'habitateScore',
-      key: 'habitateScore',
-      width: 120,
-      align: 'center',
-      sorter: true,
-      render: (score) => (
-        <Tag color={getScoreColor(score, 150)}>{score || 0}</Tag>
-      ),
-    },
-    {
-      title: 'Difficulty',
-      dataIndex: 'difficultyScore',
-      key: 'difficultyScore',
-      width: 100,
-      align: 'center',
-      sorter: true,
-      render: (score) => score ? (
-        <Tag color={getScoreColor(score, 100)}>{parseFloat(score).toFixed(1)}</Tag>
-      ) : '-',
-    },
-    {
-      title: 'Suitability',
-      dataIndex: 'suitabilityScore',
-      key: 'suitabilityScore',
-      width: 100,
-      align: 'center',
-      sorter: true,
-      render: (score) => score ? (
-        <Tag color={getScoreColor(score, 100)}>{parseFloat(score).toFixed(1)}</Tag>
-      ) : '-',
-    },
-    {
-      title: 'Flags',
-      key: 'flags',
-      width: 200,
-      render: (_, record) => (
-        <Space size="small" wrap>
-          {record.isMerge && <Tag color="blue">Merge</Tag>}
-          {record.hasDependencyChanges && <Tag color="error">Deps</Tag>}
-          {record.isBehaviorPreservingRefactor && <Tag color="warning">Refactor</Tag>}
-          {record.isUnsuitable && <Tag color="error">Unsuitable</Tag>}
-          {record.testCoverageScore && (
-            <Tag color="success">Test: {(parseFloat(record.testCoverageScore) * 100).toFixed(0)}%</Tag>
-          )}
-        </Space>
-      ),
-    },
-    {
-      title: 'Status',
-      key: 'status',
-      width: 150,
-      fixed: 'right',
-      render: (_, record) => {
-        const status = record.displayStatus || 'available';
-        const expiresAt = record.expiresAt;
-        return (
-          <Space direction="vertical" size="small" style={{ width: '100%' }}>
-            <Tag color={getStatusColor(status)}>
-              {getStatusText(status)}
-            </Tag>
-            {expiresAt && (
-              <Tooltip title={`Expires: ${dayjs(expiresAt).format('YYYY-MM-DD HH:mm')}`}>
-                <Tag color="default" icon={<ClockCircleOutlined />}>
-                  {dayjs(expiresAt).fromNow()}
-                </Tag>
-              </Tooltip>
-            )}
-          </Space>
-        );
-      },
-    },
-    {
-      title: 'Actions',
-      key: 'actions',
-      width: 200,
-      fixed: 'right',
-      render: (_, record) => {
-        const isReserved = record.userReservation && record.userReservation.status === 'reserved';
-        const isInMemo = record.isInMemo;
-        const isUnsuitable = record.isUnsuitable;
-        
-        return (
-          <Space size="small">
-            <Tooltip title={isInMemo ? 'Remove from memo' : 'Add to memo'}>
-              <Button
-                type="text"
-                size="small"
-                icon={<BookOutlined />}
-                onClick={() => handleMemo(record.id, isInMemo)}
-                loading={actionLoading[`memo-${record.id}`]}
-                style={{
-                  color: isInMemo ? '#faad14' : '#8c8c8c',
-                  padding: '4px 8px',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'rgba(250, 173, 20, 0.1)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'transparent';
-                }}
-              />
-            </Tooltip>
-            {isReserved ? (
-              <Popconfirm
-                title="Cancel reservation?"
-                onConfirm={() => handleCancelReserve(record.id)}
-                okText="Yes"
-                cancelText="No"
-              >
-                <Tooltip title="Cancel reservation">
+              {commitUrl && (
+                <Tooltip title="Open on GitHub">
                   <Button
                     type="text"
                     size="small"
-                    icon={<CloseCircleOutlined />}
-                    loading={actionLoading[`cancel-${record.id}`]}
-                    style={{
-                      color: '#52c41a',
-                      padding: '4px 8px',
+                    icon={<LinkOutlined />}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      window.open(commitUrl, '_blank');
                     }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.background = 'rgba(82, 196, 26, 0.1)';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.background = 'transparent';
-                    }}
+                    style={{ padding: '0 4px', height: 'auto' }}
                   />
                 </Tooltip>
-              </Popconfirm>
-            ) : (
-              <Tooltip title="Reserve commit">
+              )}
+            </Space>
+          );
+        },
+      },
+      {
+        title: 'Merged Commit',
+        dataIndex: 'mergedCommit',
+        key: 'mergedCommit',
+        width: 180,
+        fixed: 'left',
+        sorter: true,
+        render: (hash, record) => {
+          if (!hash) return '-';
+          const repoUrl = record.repo?.fullName ? `https://github.com/${record.repo.fullName}` : '';
+          const commitUrl = repoUrl ? `${repoUrl}/commit/${hash}` : '';
+          const handleCopy = async (e) => {
+            e.stopPropagation();
+            try {
+              await navigator.clipboard.writeText(hash);
+              message.success('Commit hash copied!');
+            } catch (err) {
+              // Fallback for older browsers
+              const textArea = document.createElement('textarea');
+              textArea.value = hash;
+              textArea.style.position = 'fixed';
+              textArea.style.opacity = '0';
+              document.body.appendChild(textArea);
+              textArea.select();
+              try {
+                document.execCommand('copy');
+                message.success('Commit hash copied!');
+              } catch (err2) {
+                message.error('Failed to copy hash');
+              }
+              document.body.removeChild(textArea);
+            }
+          };
+          return (
+            <Space size="small">
+              <code style={{ fontSize: 11 }}>{hash.substring(0, 8)}</code>
+              <Tooltip title="Copy full hash">
                 <Button
                   type="text"
                   size="small"
-                  icon={<CheckCircleOutlined />}
-                  onClick={() => handleReserve(record)}
-                  loading={actionLoading[`reserve-${record.id}`]}
-                  disabled={record.displayStatus === 'already_reserved' || record.displayStatus === 'unavailable'}
+                  icon={<CopyOutlined />}
+                  onClick={handleCopy}
+                  style={{ padding: '0 4px', height: 'auto' }}
+                />
+              </Tooltip>
+              {commitUrl && (
+                <Tooltip title="Open on GitHub">
+                  <Button
+                    type="text"
+                    size="small"
+                    icon={<LinkOutlined />}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      window.open(commitUrl, '_blank');
+                    }}
+                    style={{ padding: '0 4px', height: 'auto' }}
+                  />
+                </Tooltip>
+              )}
+            </Space>
+          );
+        },
+      },
+      {
+        title: 'PR #',
+        dataIndex: 'prNumber',
+        key: 'prNumber',
+        width: 120,
+        fixed: 'left',
+        align: 'center',
+        sorter: true,
+        render: (num, record) => {
+          if (!num) return '-';
+          const repoUrl = record.repo?.fullName ? `https://github.com/${record.repo.fullName}` : '';
+          const prUrl = repoUrl ? `${repoUrl}/pull/${num}` : '';
+          return (
+            <Space size="small">
+              <span>{num}</span>
+              {prUrl && (
+                <Tooltip title="Open PR on GitHub">
+                  <Button
+                    type="text"
+                    size="small"
+                    icon={<LinkOutlined />}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      window.open(prUrl, '_blank');
+                    }}
+                    style={{ padding: '0 4px', height: 'auto' }}
+                  />
+                </Tooltip>
+              )}
+            </Space>
+          );
+        },
+      },
+      {
+        title: 'Files',
+        dataIndex: 'fileChanges',
+        key: 'fileChanges',
+        width: 80,
+        align: 'center',
+        sorter: true,
+      },
+      {
+        title: 'Additions',
+        dataIndex: 'additions',
+        key: 'additions',
+        width: 100,
+        align: 'center',
+        sorter: true,
+        render: (val) => <span style={{ color: '#52c41a' }}>+{val || 0}</span>,
+      },
+      {
+        title: 'Deletions',
+        dataIndex: 'deletions',
+        key: 'deletions',
+        width: 100,
+        align: 'center',
+        sorter: true,
+        render: (val) => <span style={{ color: '#ff4d4f' }}>-{val || 0}</span>,
+      },
+      {
+        title: 'Net Change',
+        dataIndex: 'netChange',
+        key: 'netChange',
+        width: 100,
+        align: 'center',
+        sorter: true,
+        render: (val) => {
+          const color = val >= 0 ? '#52c41a' : '#ff4d4f';
+          return <span style={{ color }}>{val >= 0 ? '+' : ''}{val || 0}</span>;
+        },
+      },
+    ];
+
+    // Add score columns only for admins
+    if (isAdmin()) {
+      baseColumns.push(
+        {
+          title: 'Habitat Score',
+          dataIndex: 'habitateScore',
+          key: 'habitateScore',
+          width: 120,
+          align: 'center',
+          sorter: true,
+          render: (score) => (
+            <Tag color={getScoreColor(score, 150)}>{score || 0}</Tag>
+          ),
+        },
+        {
+          title: 'Difficulty',
+          dataIndex: 'difficultyScore',
+          key: 'difficultyScore',
+          width: 100,
+          align: 'center',
+          sorter: true,
+          render: (score) => score ? (
+            <Tag color={getScoreColor(score, 100)}>{parseFloat(score).toFixed(1)}</Tag>
+          ) : '-',
+        },
+        {
+          title: 'Suitability',
+          dataIndex: 'suitabilityScore',
+          key: 'suitabilityScore',
+          width: 100,
+          align: 'center',
+          sorter: true,
+          render: (score) => score ? (
+            <Tag color={getScoreColor(score, 100)}>{parseFloat(score).toFixed(1)}</Tag>
+          ) : '-',
+        }
+      );
+    }
+
+    // Add remaining columns
+    baseColumns.push(
+      {
+        title: 'Flags',
+        key: 'flags',
+        width: 200,
+        render: (_, record) => (
+          <Space size="small" wrap>
+            {record.isMerge && <Tag color="blue">Merge</Tag>}
+            {record.hasDependencyChanges && <Tag color="error">Deps</Tag>}
+            {record.isBehaviorPreservingRefactor && <Tag color="warning">Refactor</Tag>}
+            {record.isUnsuitable && <Tag color="error">Unsuitable</Tag>}
+            {record.testCoverageScore && (
+              <Tag color="success">Test: {(parseFloat(record.testCoverageScore) * 100).toFixed(0)}%</Tag>
+            )}
+          </Space>
+        ),
+      },
+      {
+        title: 'Status',
+        key: 'status',
+        width: 150,
+        fixed: 'right',
+        render: (_, record) => {
+          const status = record.displayStatus || 'available';
+          const expiresAt = record.expiresAt;
+          return (
+            <Space direction="vertical" size="small" style={{ width: '100%' }}>
+              <Tag color={getStatusColor(status)}>
+                {getStatusText(status)}
+              </Tag>
+              {expiresAt && (
+                <Tooltip title={`Expires: ${dayjs(expiresAt).format('YYYY-MM-DD HH:mm')}`}>
+                  <Tag color="default" icon={<ClockCircleOutlined />}>
+                    {dayjs(expiresAt).fromNow()}
+                  </Tag>
+                </Tooltip>
+              )}
+            </Space>
+          );
+        },
+      },
+      {
+        title: 'Actions',
+        key: 'actions',
+        width: 200,
+        fixed: 'right',
+        render: (_, record) => {
+          const isReserved = record.userReservation && record.userReservation.status === 'reserved';
+          const isInMemo = record.isInMemo;
+          const isUnsuitable = record.isUnsuitable;
+          
+          return (
+            <Space size="small">
+              <Tooltip title={isInMemo ? 'Remove from memo' : 'Add to memo'}>
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<BookOutlined />}
+                  onClick={() => handleMemo(record.id, isInMemo)}
+                  loading={actionLoading[`memo-${record.id}`]}
                   style={{
-                    color: '#1890ff',
+                    color: isInMemo ? '#faad14' : '#8c8c8c',
                     padding: '4px 8px',
                   }}
                   onMouseEnter={(e) => {
-                    e.currentTarget.style.background = 'rgba(24, 144, 255, 0.1)';
+                    e.currentTarget.style.background = 'rgba(250, 173, 20, 0.1)';
                   }}
                   onMouseLeave={(e) => {
                     e.currentTarget.style.background = 'transparent';
                   }}
                 />
               </Tooltip>
-            )}
-            <Tooltip title={isUnsuitable ? 'Unmark as unsuitable' : 'Mark as unsuitable'}>
-              <Button
-                type="text"
-                size="small"
-                icon={<ExclamationCircleOutlined />}
-                onClick={() => handleMarkUnsuitable(record.id, isUnsuitable)}
-                loading={actionLoading[`unsuitable-${record.id}`]}
-                style={{
-                  color: isUnsuitable ? '#ff4d4f' : '#8c8c8c',
-                  padding: '4px 8px',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = isUnsuitable ? 'rgba(255, 77, 79, 0.1)' : 'rgba(140, 140, 140, 0.1)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'transparent';
-                }}
-              />
-            </Tooltip>
-          </Space>
-        );
+              {isReserved ? (
+                <Popconfirm
+                  title="Cancel reservation?"
+                  onConfirm={() => handleCancelReserve(record.id)}
+                  okText="Yes"
+                  cancelText="No"
+                >
+                  <Tooltip title="Cancel reservation">
+                    <Button
+                      type="text"
+                      size="small"
+                      icon={<CloseCircleOutlined />}
+                      loading={actionLoading[`cancel-${record.id}`]}
+                      style={{
+                        color: '#52c41a',
+                        padding: '4px 8px',
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = 'rgba(82, 196, 26, 0.1)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = 'transparent';
+                      }}
+                    />
+                  </Tooltip>
+                </Popconfirm>
+              ) : (
+                <Tooltip title="Reserve commit">
+                  <Button
+                    type="text"
+                    size="small"
+                    icon={<CheckCircleOutlined />}
+                    onClick={() => handleReserve(record)}
+                    loading={actionLoading[`reserve-${record.id}`]}
+                    disabled={record.displayStatus === 'already_reserved' || record.displayStatus === 'unavailable'}
+                    style={{
+                      color: '#1890ff',
+                      padding: '4px 8px',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = 'rgba(24, 144, 255, 0.1)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = 'transparent';
+                    }}
+                  />
+                </Tooltip>
+              )}
+              <Tooltip title={isUnsuitable ? 'Unmark as unsuitable' : 'Mark as unsuitable'}>
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<ExclamationCircleOutlined />}
+                  onClick={() => handleMarkUnsuitable(record.id, isUnsuitable)}
+                  loading={actionLoading[`unsuitable-${record.id}`]}
+                  style={{
+                    color: isUnsuitable ? '#ff4d4f' : '#8c8c8c',
+                    padding: '4px 8px',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = isUnsuitable ? 'rgba(255, 77, 79, 0.1)' : 'rgba(140, 140, 140, 0.1)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'transparent';
+                  }}
+                />
+              </Tooltip>
+            </Space>
+          );
+        },
       },
-    },
-    {
-      title: 'Message',
-      dataIndex: 'message',
-      key: 'message',
-      width: 300,
-      ellipsis: true,
-      render: (msg) => msg ? (
-        <Tooltip title={msg}>
-          <span>{msg.substring(0, 50)}{msg.length > 50 ? '...' : ''}</span>
-        </Tooltip>
-      ) : '-',
-    },
-  ];
+      {
+        title: 'Message',
+        dataIndex: 'message',
+        key: 'message',
+        width: 300,
+        ellipsis: true,
+        render: (msg) => msg ? (
+          <Tooltip title={msg}>
+            <span>{msg.substring(0, 50)}{msg.length > 50 ? '...' : ''}</span>
+          </Tooltip>
+        ) : '-',
+      }
+    );
+
+    return baseColumns;
+  }, [isAdmin]);
 
   const activeFiltersCount = useMemo(() => {
     let count = 0;

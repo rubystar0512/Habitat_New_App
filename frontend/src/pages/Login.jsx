@@ -46,8 +46,8 @@ const Login = () => {
             src="/assets/icon_128x128.png" 
             alt="Habitat" 
             style={{ 
-              width: 64, 
-              height: 64, 
+              width: 50, 
+              height: 50, 
               objectFit: 'contain',
               marginBottom: 16 
             }} 

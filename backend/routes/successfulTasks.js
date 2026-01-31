@@ -44,10 +44,8 @@ router.get('/', paginationRules, handleValidationErrors, async (req, res, next) 
       }
     ];
 
-    // Only show approved tasks to non-admins, or pending/approved to admins
-    if (req.user.role !== 'admin' && status === 'approved') {
-      where.status = 'approved';
-    }
+    // All tasks are approved by default, but allow filtering by status if needed
+    // No special filtering needed since all tasks are approved when submitted
 
     const { count, rows: tasks } = await SuccessfulTask.findAndCountAll({
       where,
@@ -139,61 +137,79 @@ router.get('/commits/:commit_id', async (req, res, next) => {
 router.post('/', createSuccessfulTaskRules, handleValidationErrors, async (req, res, next) => {
   try {
     const {
-      commitId,
-      taskName,
-      taskDescription,
-      gitBaseCommit,
-      mergeCommit,
-      basePatch,
-      goldenPatch,
-      testPatch,
-      prNumber,
+      task_name,
+      task_description,
+      git_base_commit,
+      merge_commit,
+      base_patch,
+      golden_patch,
+      test_patch,
+      pr_number,
       hints,
-      aiSuccessRate,
-      payoutAmount
+      ai_success_rate,
+      payout_amount
     } = req.body;
 
-    // Verify commit exists and validate hashes
-    const commit = await Commit.findByPk(commitId);
+    // Validate required fields
+    if (!git_base_commit || !merge_commit) {
+      return res.status(400).json({ 
+        error: 'Missing required fields',
+        message: 'Both git_base_commit and merge_commit are required.'
+      });
+    }
+
+    // Find commit by git_base_commit and merge_commit hashes
+    const commit = await Commit.findOne({
+      where: {
+        baseCommit: git_base_commit,
+        mergedCommit: merge_commit
+      },
+      include: [
+        {
+          model: require('../models').GitRepo,
+          as: 'repo',
+          attributes: ['id', 'repoName', 'fullName']
+        }
+      ]
+    });
+    
     if (!commit) {
-      return res.status(404).json({ error: 'Commit not found' });
+      return res.status(404).json({ 
+        error: 'Commit not found',
+        message: `No commit found with base_commit="${git_base_commit.substring(0, 8)}..." and merge_commit="${merge_commit.substring(0, 8)}...". Please verify the commit hashes.`,
+        git_base_commit: git_base_commit,
+        merge_commit: merge_commit
+      });
     }
 
-    if (commit.baseCommit !== gitBaseCommit) {
-      return res.status(400).json({ error: 'git_base_commit does not match commit base_commit' });
-    }
-
-    if (commit.mergedCommit !== mergeCommit) {
-      return res.status(400).json({ error: 'merge_commit does not match commit merged_commit' });
-    }
-
+    // Map snake_case request body to camelCase model attributes
     const task = await SuccessfulTask.create({
       userId: req.userId,
-      commitId,
-      taskName,
-      taskDescription,
-      gitBaseCommit,
-      mergeCommit,
-      basePatch,
-      goldenPatch,
-      testPatch,
-      prNumber,
-      hints,
-      aiSuccessRate,
-      payoutAmount,
-      status: 'pending'
+      commitId: commit.id,
+      taskName: task_name,
+      taskDescription: task_description,
+      gitBaseCommit: git_base_commit,
+      mergeCommit: merge_commit,
+      basePatch: base_patch,
+      goldenPatch: golden_patch,
+      testPatch: test_patch,
+      prNumber: pr_number,
+      hints: hints,
+      aiSuccessRate: ai_success_rate,
+      payoutAmount: payout_amount,
+      status: 'approved' // Tasks are approved immediately when submitted
     });
 
     res.status(201).json({
       task,
-      message: 'Task submission created successfully. Awaiting admin approval.'
+      message: 'Task submitted successfully and is now visible to all team members.'
     });
   } catch (error) {
     next(error);
   }
 });
 
-// Update own submission (pending only)
+// Update own submission
 router.patch('/:id', idParamRule, handleValidationErrors, async (req, res, next) => {
   try {
     const task = await SuccessfulTask.findByPk(req.params.id);
@@ -203,18 +219,32 @@ router.patch('/:id', idParamRule, handleValidationErrors, async (req, res, next)
     }
 
     if (task.userId !== req.userId) {
-      return res.status(403).json({ error: 'Not authorized' });
+      return res.status(403).json({ error: 'Not authorized. You can only update your own tasks.' });
     }
 
-    if (task.status !== 'pending') {
-      return res.status(400).json({ error: 'Can only update pending submissions' });
-    }
-
-    const allowedFields = ['taskDescription', 'hints', 'basePatch', 'goldenPatch', 'testPatch'];
+    // Allow updates to own tasks regardless of status
+    // Map snake_case request body to camelCase model attributes
+    const fieldMap = {
+      task_name: 'taskName',
+      task_description: 'taskDescription',
+      hints: 'hints',
+      base_patch: 'basePatch',
+      golden_patch: 'goldenPatch',
+      test_patch: 'testPatch',
+      pr_number: 'prNumber',
+      ai_success_rate: 'aiSuccessRate',
+      payout_amount: 'payoutAmount'
+    };
+    
     const updates = {};
-    allowedFields.forEach(field => {
-      if (req.body[field] !== undefined) {
-        updates[field] = req.body[field];
+    Object.keys(fieldMap).forEach(snakeKey => {
+      const camelKey = fieldMap[snakeKey];
+      if (req.body[snakeKey] !== undefined) {
+        updates[camelKey] = req.body[snakeKey];
+      }
+      // Also support camelCase for backward compatibility
+      if (req.body[camelKey] !== undefined) {
+        updates[camelKey] = req.body[camelKey];
       }
     });
 
@@ -226,7 +256,7 @@ router.patch('/:id', idParamRule, handleValidationErrors, async (req, res, next)
   }
 });
 
-// Delete own submission (pending only)
+// Delete submission (own tasks for members, any task for admins)
 router.delete('/:id', idParamRule, handleValidationErrors, async (req, res, next) => {
   try {
     const task = await SuccessfulTask.findByPk(req.params.id);
@@ -235,17 +265,14 @@ router.delete('/:id', idParamRule, handleValidationErrors, async (req, res, next
       return res.status(404).json({ error: 'Task not found' });
     }
 
-    if (task.userId !== req.userId) {
-      return res.status(403).json({ error: 'Not authorized' });
-    }
-
-    if (task.status !== 'pending') {
-      return res.status(400).json({ error: 'Can only delete pending submissions' });
+    // Admins can delete any task, members can only delete their own tasks
+    if (task.userId !== req.userId && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Not authorized. You can only delete your own tasks.' });
     }
 
     await task.destroy();
 
-    res.json({ message: 'Task submission deleted successfully' });
+    res.json({ message: 'Task deleted successfully' });
   } catch (error) {
     next(error);
   }

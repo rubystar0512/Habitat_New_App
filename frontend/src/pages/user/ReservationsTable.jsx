@@ -87,9 +87,25 @@ const ReservationsTable = () => {
   const handleSync = async () => {
     setSyncing(true);
     try {
-      // Sync reservations from Habitat API
-      // This would need to be implemented in the backend
-      message.info('Sync feature coming soon');
+      const response = await api.post('/reservations/sync');
+      const { synced, updated, errors } = response.data;
+      
+      let messageText = '';
+      if (synced > 0 || updated > 0) {
+        messageText = `Synced ${synced} new reservations`;
+        if (updated > 0) {
+          messageText += `, updated ${updated} existing reservations`;
+        }
+        message.success(messageText);
+      } else {
+        message.info('No new reservations to sync');
+      }
+      
+      if (errors && errors.length > 0) {
+        console.warn('Sync errors:', errors);
+        message.warning(`${errors.length} error(s) occurred during sync. Check console for details.`);
+      }
+      
       await fetchReservations();
     } catch (err) {
       console.error('Failed to sync reservations:', err);
