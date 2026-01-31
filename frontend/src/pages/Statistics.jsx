@@ -20,6 +20,7 @@ const Statistics = () => {
   const [repoScoresData, setRepoScoresData] = useState([]);
   const [teamStatsData, setTeamStatsData] = useState([]);
   const [scoreDistribution, setScoreDistribution] = useState(null);
+  const [scoreDistributionByRepo, setScoreDistributionByRepo] = useState([]);
   const [earningsTimeline, setEarningsTimeline] = useState([]);
   const [earningsByRepo, setEarningsByRepo] = useState({ data: [], total: 0 });
 
@@ -30,11 +31,12 @@ const Statistics = () => {
   const fetchAllData = async () => {
     setLoading(true);
     try {
-      const [repoCommits, repoScores, teamStats, scoreDist, earningsTime, earningsRepo] = await Promise.all([
+      const [repoCommits, repoScores, teamStats, scoreDist, scoreDistByRepo, earningsTime, earningsRepo] = await Promise.all([
         api.get('/stats/repo-commits'),
         api.get('/stats/repo-scores'),
         isAdmin() ? api.get('/stats/team-stats') : Promise.resolve({ data: { data: [] } }),
         api.get('/stats/score-distribution'),
+        api.get('/stats/score-distribution-by-repo'),
         api.get(`/stats/earnings-timeline?days=${timeRange}`),
         api.get(`/stats/earnings-by-repo?days=${timeRange}`)
       ]);
@@ -43,6 +45,7 @@ const Statistics = () => {
       setRepoScoresData(repoScores.data.data || []);
       setTeamStatsData(teamStats.data.data || []);
       setScoreDistribution(scoreDist.data);
+      setScoreDistributionByRepo(scoreDistByRepo.data.data || []);
       setEarningsTimeline(earningsTime.data.data || []);
       setEarningsByRepo(earningsRepo.data);
     } catch (error) {
@@ -227,10 +230,10 @@ const Statistics = () => {
     backgroundColor: 'transparent'
   };
 
-  // Score Distribution Chart
+  // Score Distribution Chart (Overall)
   const scoreDistributionOption = scoreDistribution && scoreDistribution.distribution ? {
     title: {
-      text: 'Commit Score Distribution',
+      text: 'Commit Score Distribution (Overall)',
       subtext: `${scoreDistribution.total || 0} total commits`,
       left: 'center',
       textStyle: { color: 'rgb(241, 245, 249)' },
@@ -279,7 +282,111 @@ const Statistics = () => {
     backgroundColor: 'transparent'
   } : {
     title: {
-      text: 'Commit Score Distribution',
+      text: 'Commit Score Distribution (Overall)',
+      left: 'center',
+      textStyle: { color: 'rgb(241, 245, 249)' }
+    },
+    graphic: {
+      type: 'text',
+      left: 'center',
+      top: 'middle',
+      style: {
+        text: 'No data available',
+        fontSize: 16,
+        fill: 'rgb(148, 163, 184)'
+      }
+    },
+    backgroundColor: 'transparent'
+  };
+
+  // Score Distribution by Repo Chart
+  const scoreDistributionByRepoOption = scoreDistributionByRepo.length > 0 ? {
+    title: {
+      text: 'Commit Score Distribution by Repository',
+      left: 'center',
+      textStyle: { color: 'rgb(241, 245, 249)' }
+    },
+    tooltip: {
+      trigger: 'axis',
+      axisPointer: { type: 'shadow' }
+    },
+    legend: {
+      data: ['Too Easy', 'Easy', 'In Distribution', 'Hard', 'Too Hard', 'Unsuitable'],
+      top: 30,
+      textStyle: { color: 'rgb(148, 163, 184)' }
+    },
+    grid: {
+      left: '3%',
+      right: '4%',
+      bottom: '15%',
+      containLabel: true
+    },
+    xAxis: {
+      type: 'category',
+      data: scoreDistributionByRepo.slice(0, 15).map(r => r.repoName),
+      axisLabel: {
+        color: 'rgb(148, 163, 184)',
+        rotate: 45,
+        interval: 0
+      }
+    },
+    yAxis: {
+      type: 'value',
+      name: 'Number of Commits',
+      nameTextStyle: { color: 'rgb(148, 163, 184)' },
+      axisLabel: { color: 'rgb(148, 163, 184)' },
+      splitLine: {
+        lineStyle: { color: '#334155' }
+      }
+    },
+    series: [
+      {
+        name: 'Too Easy',
+        type: 'bar',
+        stack: 'score',
+        data: scoreDistributionByRepo.slice(0, 15).map(r => r.distribution.tooEasy || 0),
+        itemStyle: { color: '#8b5cf6' }
+      },
+      {
+        name: 'Easy',
+        type: 'bar',
+        stack: 'score',
+        data: scoreDistributionByRepo.slice(0, 15).map(r => r.distribution.easy || 0),
+        itemStyle: { color: '#3b82f6' }
+      },
+      {
+        name: 'In Distribution',
+        type: 'bar',
+        stack: 'score',
+        data: scoreDistributionByRepo.slice(0, 15).map(r => r.distribution.inDistribution || 0),
+        itemStyle: { color: '#16a34a' }
+      },
+      {
+        name: 'Hard',
+        type: 'bar',
+        stack: 'score',
+        data: scoreDistributionByRepo.slice(0, 15).map(r => r.distribution.hard || 0),
+        itemStyle: { color: '#f59e0b' }
+      },
+      {
+        name: 'Too Hard',
+        type: 'bar',
+        stack: 'score',
+        data: scoreDistributionByRepo.slice(0, 15).map(r => r.distribution.tooHard || 0),
+        itemStyle: { color: '#ef4444' }
+      },
+      {
+        name: 'Unsuitable',
+        type: 'bar',
+        stack: 'score',
+        data: scoreDistributionByRepo.slice(0, 15).map(r => r.distribution.unsuitable || 0),
+        itemStyle: { color: '#64748b' }
+      }
+    ],
+    backgroundColor: 'transparent'
+  } : {
+    title: {
+      text: 'Commit Score Distribution by Repository',
       left: 'center',
       textStyle: { color: 'rgb(241, 245, 249)' }
     },
@@ -539,7 +646,7 @@ const Statistics = () => {
         </Col>
       </Row>
 
-      {/* Row 1: Repo Commits & Score Distribution */}
+      {/* Row 1: Repo Commits & Score Distribution (Overall) */}
       <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
         <Col xs={24} lg={12}>
           <Card
@@ -569,6 +676,26 @@ const Statistics = () => {
             <ReactECharts
               option={scoreDistributionOption}
               style={{ height: '400px', width: '100%' }}
+              opts={{ renderer: 'svg' }}
+            />
+          </Card>
+        </Col>
+      </Row>
+
+      {/* Row 1.5: Score Distribution by Repo */}
+      <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+        <Col xs={24}>
+          <Card
+            style={{
+              background: '#1e293b',
+              border: '1px solid #334155',
+              borderRadius: 12
+            }}
+            bodyStyle={{ padding: '20px' }}
+          >
+            <ReactECharts
+              option={scoreDistributionByRepoOption}
+              style={{ height: '500px', width: '100%' }}
               opts={{ renderer: 'svg' }}
             />
           </Card>

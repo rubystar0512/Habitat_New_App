@@ -153,21 +153,35 @@ router.get('/repo-commits', async (req, res, next) => {
   try {
     const repos = await GitRepo.findAll({
       where: { isActive: true },
-      attributes: ['id', 'repoName', 'fullName'],
+      attributes: ['id', 'repoName', 'fullName', 'cutoffDate'],
       include: [
         {
           model: Commit,
           as: 'commits',
-          attributes: ['id'],
+          attributes: ['id', 'commitDate'],
           required: false
         }
       ]
     });
 
-    const data = repos.map(repo => ({
-      name: repo.repoName || repo.fullName,
-      value: repo.commits?.length || 0
-    })).sort((a, b) => b.value - a.value);
+    const data = repos.map(repo => {
+      let commits = repo.commits || [];
+
+      // Filter by cutoff date if it exists
+      if (repo.cutoffDate) {
+        const cutoffDate = new Date(repo.cutoffDate);
+        commits = commits.filter(c => {
+          if (!c.commitDate) return false;
+          const commitDate = new Date(c.commitDate);
+          return commitDate >= cutoffDate;
+        });
+      }
+
+      return {
+        name: repo.repoName || repo.fullName,
+        value: commits.length
+      };
+    }).sort((a, b) => b.value - a.value);
 
     res.json({ data });
   } catch (error) {
@@ -180,19 +194,30 @@ router.get('/repo-scores', async (req, res, next) => {
   try {
     const repos = await GitRepo.findAll({
       where: { isActive: true },
-      attributes: ['id', 'repoName', 'fullName'],
+      attributes: ['id', 'repoName', 'fullName', 'cutoffDate'],
       include: [
         {
           model: Commit,
           as: 'commits',
-          attributes: ['habitateScore', 'suitabilityScore', 'difficultyScore'],
+          attributes: ['habitateScore', 'suitabilityScore', 'difficultyScore', 'commitDate'],
           required: false
         }
       ]
     });
 
     const data = repos.map(repo => {
-      const commits = repo.commits || [];
+      let commits = repo.commits || [];
+
+      // Filter by cutoff date if it exists
+      if (repo.cutoffDate) {
+        const cutoffDate = new Date(repo.cutoffDate);
+        commits = commits.filter(c => {
+          if (!c.commitDate) return false;
+          const commitDate = new Date(c.commitDate);
+          return commitDate >= cutoffDate;
+        });
+      }
+
       const validCommits = commits.filter(c => c.habitateScore !== null);
       
       return {
@@ -262,14 +287,38 @@ router.get('/team-stats', async (req, res, next) => {
   }
 });
 
-// Commit score distribution
+// Commit score distribution (overall or per-repo)
 router.get('/score-distribution', async (req, res, next) => {
   try {
+    const repoId = req.query.repoId ? parseInt(req.query.repoId) : null;
+    
+    let whereClause = {
+      habitateScore: { [Op.not]: null }
+    };
+
+    // If repoId is provided, filter by repo and respect cutoff date
+    if (repoId) {
+      const repo = await GitRepo.findByPk(repoId, {
+        attributes: ['id', 'cutoffDate']
+      });
+
+      if (!repo) {
+        return res.status(404).json({ error: 'Repository not found' });
+      }
+
+      whereClause.repoId = repoId;
+
+      // Filter commits by cutoff date if it exists
+      if (repo.cutoffDate) {
+        whereClause.commitDate = {
+          [Op.gte]: new Date(repo.cutoffDate)
+        };
+      }
+    }
+
     const commits = await Commit.findAll({
       attributes: ['habitateScore', 'isUnsuitable'],
-      where: {
-        habitateScore: { [Op.not]: null }
-      }
+      where: whereClause
     });
 
     const distribution = {
@@ -281,7 +330,62 @@ router.get('/score-distribution', async (req, res, next) => {
       unsuitable: commits.filter(c => c.isUnsuitable).length
     };
 
-    res.json({ distribution, total: commits.length });
+    res.json({ distribution, total: commits.length, repoId: repoId || null });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Score distribution per repository
+router.get('/score-distribution-by-repo', async (req, res, next) => {
+  try {
+    const repos = await GitRepo.findAll({
+      where: { isActive: true },
+      attributes: ['id', 'repoName', 'fullName', 'cutoffDate'],
+      include: [
+        {
+          model: Commit,
+          as: 'commits',
+          attributes: ['habitateScore', 'isUnsuitable', 'commitDate'],
+          required: false,
+          where: {
+            habitateScore: { [Op.not]: null }
+          }
+        }
+      ]
+    });
+
+    const data = repos.map(repo => {
+      let commits = repo.commits || [];
+
+      // Filter by cutoff date if it exists
+      if (repo.cutoffDate) {
+        const cutoffDate = new Date(repo.cutoffDate);
+        commits = commits.filter(c => {
+          if (!c.commitDate) return false;
+          const commitDate = new Date(c.commitDate);
+          return commitDate >= cutoffDate;
+        });
+      }
+
+      const distribution = {
+        tooEasy: commits.filter(c => c.habitateScore < 50).length,
+        easy: commits.filter(c => c.habitateScore >= 50 && c.habitateScore < 80).length,
+        inDistribution: commits.filter(c => c.habitateScore >= 80 && c.habitateScore < 120).length,
+        hard: commits.filter(c => c.habitateScore >= 120 && c.habitateScore < 150).length,
+        tooHard: commits.filter(c => c.habitateScore >= 150).length,
+        unsuitable: commits.filter(c => c.isUnsuitable).length
+      };
+
+      return {
+        repoId: repo.id,
+        repoName: repo.repoName || repo.fullName,
+        distribution,
+        total: commits.length
+      };
+    }).filter(r => r.total > 0).sort((a, b) => b.total - a.total);
+
+    res.json({ data });
   } catch (error) {
     next(error);
   }
@@ -360,12 +464,12 @@ router.get('/earnings-by-repo', async (req, res, next) => {
         {
           model: Commit,
           as: 'commit',
-          attributes: ['id'],
+          attributes: ['id', 'commitDate'],
           include: [
             {
               model: GitRepo,
               as: 'repo',
-              attributes: ['repoName', 'fullName'],
+              attributes: ['id', 'repoName', 'fullName', 'cutoffDate'],
               required: true
             }
           ]
@@ -375,7 +479,19 @@ router.get('/earnings-by-repo', async (req, res, next) => {
 
     const repoData = {};
     tasks.forEach(task => {
-      const repoName = task.commit?.repo?.repoName || task.commit?.repo?.fullName || 'Unknown';
+      const repo = task.commit?.repo;
+      if (!repo) return;
+
+      // Filter by cutoff date if it exists
+      if (repo.cutoffDate && task.commit?.commitDate) {
+        const cutoffDate = new Date(repo.cutoffDate);
+        const commitDate = new Date(task.commit.commitDate);
+        if (commitDate < cutoffDate) {
+          return; // Skip this task if commit is before cutoff date
+        }
+      }
+
+      const repoName = repo.repoName || repo.fullName || 'Unknown';
       if (!repoData[repoName]) {
         repoData[repoName] = 0;
       }
