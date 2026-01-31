@@ -19,6 +19,7 @@ import ReservationsTable from './pages/user/ReservationsTable';
 import ReservationCron from './pages/user/ReservationCron';
 import SuccessfulTasks from './pages/SuccessfulTasks';
 import Statistics from './pages/Statistics';
+import UserGuide from './pages/UserGuide';
 
 function App() {
   return (
@@ -77,6 +78,7 @@ function App() {
             {/* Common routes */}
             <Route path="successful-tasks" element={<SuccessfulTasks />} />
             <Route path="statistics" element={<Statistics />} />
+            <Route path="docs" element={<UserGuide />} />
           </Route>
         </Routes>
       </AuthProvider>
