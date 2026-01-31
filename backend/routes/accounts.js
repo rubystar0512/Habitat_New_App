@@ -1,7 +1,9 @@
 const express = require('express');
-const { UserHabitatAccount, AccountRepoMapping, GitRepo } = require('../models');
+const { Op } = require('sequelize');
+const { UserHabitatAccount, AccountRepoMapping, GitRepo, Reservation } = require('../models');
 const { authenticateToken } = require('../middleware/auth');
 const { idParamRule, paginationRules, handleValidationErrors } = require('../middleware/validation');
+const { checkAccountHealth } = require('../services/habitatApi');
 
 const router = express.Router();
 
@@ -139,6 +141,84 @@ router.post('/:id/repos', idParamRule, handleValidationErrors, async (req, res, 
     });
 
     res.json({ message: 'Repo mapping added successfully' });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Check account health
+router.post('/:id/check-health', idParamRule, handleValidationErrors, async (req, res, next) => {
+  try {
+    const account = await UserHabitatAccount.findOne({
+      where: { id: req.params.id, userId: req.userId }
+    });
+
+    if (!account) {
+      return res.status(404).json({ error: 'Account not found' });
+    }
+
+    if (!account.isActive) {
+      return res.status(400).json({ error: 'Account is not active' });
+    }
+
+    const apiUrl = account.apiUrl || process.env.HABITAT_API_URL || 'https://code.habitat.inc';
+    const healthResult = await checkAccountHealth(account.apiToken, apiUrl);
+
+    if (!healthResult.success) {
+      // API call failed - mark as error
+      await account.update({
+        accountHealth: 'error',
+        healthLastChecked: new Date()
+      });
+
+      return res.json({
+        success: false,
+        health: 'error',
+        error: healthResult.error,
+        account: account
+      });
+    }
+
+    // Count active reservations in our database
+    const activeReservationsCount = await Reservation.count({
+      where: {
+        accountId: account.id,
+        status: {
+          [Op.in]: ['pending', 'active']
+        }
+      }
+    });
+
+    // Calculate remaining reversals
+    const remainingReversals = Math.max(0, account.reverseLimit - activeReservationsCount);
+
+    // Determine health status
+    let healthStatus = 'healthy';
+    if (remainingReversals === 0) {
+      healthStatus = 'exhausted';
+    } else if (remainingReversals <= 2) {
+      healthStatus = 'warning';
+    }
+
+    // Update account with health information
+    await account.update({
+      accountHealth: healthStatus,
+      remainingReversals: remainingReversals,
+      healthLastChecked: new Date(),
+      totalReservationsMade: healthResult.totalReservations || account.totalReservationsMade
+    });
+
+    // Reload account to get updated values
+    await account.reload();
+
+    res.json({
+      success: true,
+      health: healthStatus,
+      remainingReversals: remainingReversals,
+      activeReservations: activeReservationsCount,
+      reverseLimit: account.reverseLimit,
+      account: account
+    });
   } catch (error) {
     next(error);
   }

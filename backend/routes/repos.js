@@ -120,4 +120,22 @@ router.patch('/:id/fetch-status', requireAdmin, idParamRule, handleValidationErr
   }
 });
 
+// Delete repo (admin only)
+router.delete('/:id', requireAdmin, idParamRule, handleValidationErrors, async (req, res, next) => {
+  try {
+    const repo = await GitRepo.findByPk(req.params.id);
+    if (!repo) {
+      return res.status(404).json({ error: 'Repository not found' });
+    }
+
+    await repo.destroy();
+
+    res.json({
+      message: 'Repository deleted successfully'
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 module.exports = router;

@@ -57,7 +57,7 @@ const UserHabitatAccount = sequelize.define('UserHabitatAccount', {
     field: 'failed_reservations'
   },
   accountHealth: {
-    type: DataTypes.ENUM('healthy', 'warning', 'error', 'unknown'),
+    type: DataTypes.ENUM('healthy', 'warning', 'error', 'unknown', 'exhausted'),
     defaultValue: 'unknown',
     field: 'account_health'
   },

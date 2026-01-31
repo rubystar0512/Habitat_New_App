@@ -165,7 +165,17 @@ const Commit = sequelize.define('Commit', {
     { fields: ['has_dependency_changes'] },
     { fields: ['is_unsuitable'] },
     { fields: ['is_behavior_preserving_refactor'] },
-    { fields: ['commit_date'] }
+    { fields: ['commit_date'] },
+    // Indexes for commonly sorted columns to improve sort performance
+    { fields: ['net_change'] },
+    { fields: ['additions'] },
+    { fields: ['deletions'] },
+    { fields: ['file_changes'] },
+    { fields: ['author'] },
+    { fields: ['pr_number'] },
+    // Composite index for common sort combinations
+    { fields: ['habitate_score', 'net_change'] },
+    { fields: ['habitate_score', 'commit_date'] }
   ]
 });
 

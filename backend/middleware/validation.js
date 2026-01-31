@@ -13,7 +13,7 @@ const handleValidationErrors = (req, res, next) => {
 
 // Common validation rules
 const paginationRules = [
-  query('limit').optional().isInt({ min: 1, max: 100 }).toInt(),
+  query('limit').optional().isInt({ min: 1, max: 10000 }).toInt(), // Increased max for memo and other large queries
   query('offset').optional().isInt({ min: 0 }).toInt()
 ];
 
@@ -43,12 +43,34 @@ const registerRules = [
 const commitFilterRules = [
   query('repo_id').optional().isInt({ min: 1 }),
   query('min_habitate_score').optional().isInt({ min: 0 }),
+  query('max_habitate_score').optional().isInt({ min: 0 }),
   query('min_difficulty_score').optional().isFloat({ min: 0, max: 100 }),
+  query('max_difficulty_score').optional().isFloat({ min: 0, max: 100 }),
   query('min_suitability_score').optional().isFloat({ min: 0, max: 100 }),
+  query('max_suitability_score').optional().isFloat({ min: 0, max: 100 }),
+  query('min_additions').optional().isInt({ min: 0 }),
+  query('max_additions').optional().isInt({ min: 0 }),
+  query('min_deletions').optional().isInt({ min: 0 }),
+  query('max_deletions').optional().isInt({ min: 0 }),
+  query('min_net_change').optional().isInt(),
+  query('max_net_change').optional().isInt(),
+  query('min_file_changes').optional().isInt({ min: 0 }),
+  query('max_file_changes').optional().isInt({ min: 0 }),
+  query('is_merge').optional().isBoolean(),
+  query('author').optional().isString(),
+  query('merged_commit').optional().isString(),
+  query('base_commit').optional().isString(),
+  query('pr_number').optional().isInt({ min: 1 }),
+  query('message').optional().isString(),
+  query('date_from').optional().isISO8601(),
+  query('date_to').optional().isISO8601(),
   query('has_dependency_changes').optional().isBoolean(),
   query('is_unsuitable').optional().isBoolean(),
+  query('is_behavior_preserving_refactor').optional().isBoolean(),
   query('single_file_200plus').optional().isBoolean(),
-  query('multi_file_300plus').optional().isBoolean()
+  query('multi_file_300plus').optional().isBoolean(),
+  query('sort_field').optional().isString(),
+  query('sort_order').optional().isIn(['ASC', 'DESC'])
 ];
 
 // Reservation validations

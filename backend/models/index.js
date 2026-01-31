@@ -55,8 +55,11 @@ CommitFavorite.belongsTo(Commit, { foreignKey: 'commit_id', as: 'commit' });
 Commit.hasMany(SuccessfulTask, { foreignKey: 'commit_id', as: 'successfulTasks' });
 SuccessfulTask.belongsTo(Commit, { foreignKey: 'commit_id', as: 'commit' });
 
-Commit.hasOne(CommitStatusCache, { foreignKey: 'commit_id', as: 'statusCache' });
+Commit.hasMany(CommitStatusCache, { foreignKey: 'commit_id', as: 'statusCache' });
 CommitStatusCache.belongsTo(Commit, { foreignKey: 'commit_id', as: 'commit' });
+
+UserHabitatAccount.hasMany(CommitStatusCache, { foreignKey: 'account_id', as: 'statusCache' });
+CommitStatusCache.belongsTo(UserHabitatAccount, { foreignKey: 'account_id', as: 'account' });
 
 UserHabitatAccount.hasMany(Reservation, { foreignKey: 'account_id', as: 'reservations' });
 Reservation.belongsTo(UserHabitatAccount, { foreignKey: 'account_id', as: 'account' });

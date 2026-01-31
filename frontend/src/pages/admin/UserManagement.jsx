@@ -16,6 +16,7 @@ import {
   Row,
   Col,
   Badge,
+  Tooltip,
 } from 'antd';
 import {
   UserOutlined,
@@ -194,23 +195,26 @@ const UserManagement = () => {
       dataIndex: 'id',
       key: 'id',
       width: 80,
+      sorter: (a, b) => a.id - b.id,
     },
     {
       title: 'Username',
       dataIndex: 'username',
       key: 'username',
-      sorter: true,
+      sorter: (a, b) => a.username.localeCompare(b.username),
     },
     {
       title: 'Email',
       dataIndex: 'email',
       key: 'email',
+      sorter: (a, b) => a.email.localeCompare(b.email),
     },
     {
       title: 'Role',
       dataIndex: 'role',
       key: 'role',
       width: 100,
+      sorter: (a, b) => a.role.localeCompare(b.role),
       render: (role) => (
         <Tag color={role === 'admin' ? 'green' : 'blue'}>{role.toUpperCase()}</Tag>
       ),
@@ -220,6 +224,7 @@ const UserManagement = () => {
       dataIndex: 'isApproved',
       key: 'isApproved',
       width: 120,
+      sorter: (a, b) => (a.isApproved === b.isApproved ? 0 : a.isApproved ? 1 : -1),
       render: (isApproved) => (
         <Badge
           status={isApproved ? 'success' : 'default'}
@@ -233,12 +238,23 @@ const UserManagement = () => {
       key: 'totalReservations',
       width: 120,
       align: 'center',
+      sorter: (a, b) => (a.totalReservations || 0) - (b.totalReservations || 0),
     },
     {
       title: 'Success Rate',
       key: 'successRate',
       width: 120,
       align: 'center',
+      sorter: (a, b) => {
+        const aTotal = (a.successfulTasks || 0) + (a.failedTasks || 0);
+        const bTotal = (b.successfulTasks || 0) + (b.failedTasks || 0);
+        if (aTotal === 0 && bTotal === 0) return 0;
+        if (aTotal === 0) return 1;
+        if (bTotal === 0) return -1;
+        const aRate = (a.successfulTasks || 0) / aTotal;
+        const bRate = (b.successfulTasks || 0) / bTotal;
+        return aRate - bRate;
+      },
       render: (_, record) => {
         const total = (record.successfulTasks || 0) + (record.failedTasks || 0);
         if (total === 0) return '-';
@@ -251,6 +267,12 @@ const UserManagement = () => {
       dataIndex: 'lastLogin',
       key: 'lastLogin',
       width: 180,
+      sorter: (a, b) => {
+        if (!a.lastLogin && !b.lastLogin) return 0;
+        if (!a.lastLogin) return 1;
+        if (!b.lastLogin) return -1;
+        return new Date(a.lastLogin) - new Date(b.lastLogin);
+      },
       render: (date) => date ? dayjs(date).format('YYYY-MM-DD HH:mm') : 'Never',
     },
     {
@@ -258,6 +280,7 @@ const UserManagement = () => {
       dataIndex: 'createdAt',
       key: 'createdAt',
       width: 180,
+      sorter: (a, b) => new Date(a.createdAt) - new Date(b.createdAt),
       render: (date) => dayjs(date).format('YYYY-MM-DD HH:mm'),
     },
     {
@@ -267,32 +290,68 @@ const UserManagement = () => {
       fixed: 'right',
       render: (_, record) => (
         <Space size="small">
-          <Button
-            type="link"
-            size="small"
-            icon={<EditOutlined />}
-            onClick={() => handleEdit(record)}
-          >
-            Edit
-          </Button>
+          <Tooltip title="Edit User">
+            <Button
+              type="text"
+              size="middle"
+              icon={<EditOutlined />}
+              onClick={() => handleEdit(record)}
+              style={{
+                color: '#1890ff',
+                padding: '4px 8px',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'rgba(24, 144, 255, 0.1)';
+                e.currentTarget.style.color = '#40a9ff';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'transparent';
+                e.currentTarget.style.color = '#1890ff';
+              }}
+            />
+          </Tooltip>
           {!record.isApproved ? (
-            <Button
-              type="link"
-              size="small"
-              icon={<CheckOutlined />}
-              onClick={() => handleApprove(record.id, true)}
-            >
-              Approve
-            </Button>
+            <Tooltip title="Approve User">
+              <Button
+                type="text"
+                size="middle"
+                icon={<CheckOutlined />}
+                onClick={() => handleApprove(record.id, true)}
+                style={{
+                  color: '#52c41a',
+                  padding: '4px 8px',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'rgba(82, 196, 26, 0.1)';
+                  e.currentTarget.style.color = '#73d13d';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'transparent';
+                  e.currentTarget.style.color = '#52c41a';
+                }}
+              />
+            </Tooltip>
           ) : (
-            <Button
-              type="link"
-              size="small"
-              icon={<CloseOutlined />}
-              onClick={() => handleApprove(record.id, false)}
-            >
-              Unapprove
-            </Button>
+            <Tooltip title="Unapprove User">
+              <Button
+                type="text"
+                size="middle"
+                icon={<CloseOutlined />}
+                onClick={() => handleApprove(record.id, false)}
+                style={{
+                  color: '#faad14',
+                  padding: '4px 8px',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'rgba(250, 173, 20, 0.1)';
+                  e.currentTarget.style.color = '#ffc53d';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'transparent';
+                  e.currentTarget.style.color = '#faad14';
+                }}
+              />
+            </Tooltip>
           )}
           <Select
             size="small"
@@ -309,14 +368,23 @@ const UserManagement = () => {
             okText="Yes"
             cancelText="No"
           >
-            <Button
-              type="link"
-              danger
-              size="small"
-              icon={<DeleteOutlined />}
-            >
-              Delete
-            </Button>
+            <Tooltip title="Delete User">
+              <Button
+                type="text"
+                size="middle"
+                danger
+                icon={<DeleteOutlined />}
+                style={{
+                  padding: '4px 8px',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'rgba(255, 77, 79, 0.1)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'transparent';
+                }}
+              />
+            </Tooltip>
           </Popconfirm>
         </Space>
       ),
@@ -443,7 +511,7 @@ const UserManagement = () => {
               { min: 3, message: 'Username must be at least 3 characters' },
             ]}
           >
-            <Input prefix={<UserOutlined />} placeholder="Username" />
+            <Input size="large" prefix={<UserOutlined />} placeholder="Username" />
           </Form.Item>
 
           <Form.Item
@@ -454,7 +522,7 @@ const UserManagement = () => {
               { type: 'email', message: 'Please enter a valid email' },
             ]}
           >
-            <Input placeholder="Email" />
+            <Input size="large" placeholder="Email" />
           </Form.Item>
 
           <Form.Item
@@ -465,7 +533,7 @@ const UserManagement = () => {
               { min: 6, message: 'Password must be at least 6 characters' },
             ]}
           >
-            <Input.Password placeholder="Password" />
+            <Input.Password size="large" placeholder="Password" />
           </Form.Item>
 
           <Form.Item
@@ -473,7 +541,7 @@ const UserManagement = () => {
             label="Role"
             initialValue="user"
           >
-            <Select>
+            <Select size="large">
               <Option value="user">User</Option>
               <Option value="admin">Admin</Option>
             </Select>
@@ -529,7 +597,7 @@ const UserManagement = () => {
               { min: 3, message: 'Username must be at least 3 characters' },
             ]}
           >
-            <Input prefix={<UserOutlined />} placeholder="Username" />
+            <Input size="large" prefix={<UserOutlined />} placeholder="Username" />
           </Form.Item>
 
           <Form.Item
@@ -540,21 +608,21 @@ const UserManagement = () => {
               { type: 'email', message: 'Please enter a valid email' },
             ]}
           >
-            <Input placeholder="Email" />
+            <Input size="large" placeholder="Email" />
           </Form.Item>
 
           <Form.Item
             name="password"
             label="Password (leave empty to keep current)"
           >
-            <Input.Password placeholder="New password" />
+            <Input.Password size="large" placeholder="New password" />
           </Form.Item>
 
           <Form.Item
             name="role"
             label="Role"
           >
-            <Select>
+            <Select size="large">
               <Option value="user">User</Option>
               <Option value="admin">Admin</Option>
             </Select>

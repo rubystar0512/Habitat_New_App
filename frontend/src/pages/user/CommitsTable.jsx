@@ -1,15 +1,1267 @@
-import React from 'react';
-import { Typography } from 'antd';
+import React, { useState, useEffect, useMemo } from 'react';
+import {
+  Table,
+  Card,
+  Button,
+  Input,
+  Space,
+  Tag,
+  Select,
+  InputNumber,
+  DatePicker,
+  Switch,
+  message,
+  Typography,
+  Row,
+  Col,
+  Badge,
+  Tooltip,
+  Collapse,
+  Checkbox,
+  Modal,
+  Popconfirm,
+} from 'antd';
+import {
+  SearchOutlined,
+  ReloadOutlined,
+  FilterOutlined,
+  ClearOutlined,
+  StarOutlined,
+  BookOutlined,
+  CheckCircleOutlined,
+  CopyOutlined,
+  LinkOutlined,
+  CloseCircleOutlined,
+  ExclamationCircleOutlined,
+  ClockCircleOutlined,
+} from '@ant-design/icons';
+import api from '../../config/api';
+import dayjs from 'dayjs';
+import relativeTime from 'dayjs/plugin/relativeTime';
 
-const { Title } = Typography;
+dayjs.extend(relativeTime);
+
+const { Title, Text } = Typography;
+const { Option } = Select;
+const { RangePicker } = DatePicker;
+const { Panel } = Collapse;
 
 const CommitsTable = () => {
+  const [commits, setCommits] = useState([]);
+  const [repos, setRepos] = useState([]);
+  const [accounts, setAccounts] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [total, setTotal] = useState(0);
+  const [pagination, setPagination] = useState({
+    current: 1,
+    pageSize: 50,
+  });
+  const [sortField, setSortField] = useState('habitate_score');
+  const [sortOrder, setSortOrder] = useState('DESC');
+  const [showFilters, setShowFilters] = useState(false);
+  const [reserveModalVisible, setReserveModalVisible] = useState(false);
+  const [selectedCommit, setSelectedCommit] = useState(null);
+  const [selectedAccountId, setSelectedAccountId] = useState(null);
+  const [actionLoading, setActionLoading] = useState({});
+
+  const [filters, setFilters] = useState({
+    repo_id: null,
+    min_habitate_score: null,
+    max_habitate_score: null,
+    min_difficulty_score: null,
+    max_difficulty_score: null,
+    min_suitability_score: null,
+    max_suitability_score: null,
+    min_additions: null,
+    max_additions: null,
+    min_deletions: null,
+    max_deletions: null,
+    min_net_change: null,
+    max_net_change: null,
+    min_file_changes: null,
+    max_file_changes: null,
+    is_merge: null,
+    author: '',
+    merged_commit: '',
+    base_commit: '',
+    pr_number: '',
+    message: '',
+    date_range: null,
+    has_dependency_changes: false, // Default to false (must be false)
+    is_unsuitable: null,
+    is_behavior_preserving_refactor: null,
+    single_file_200plus: false,
+    multi_file_300plus: false,
+    status: null, // Filter by status: available, reserved, already_reserved, unavailable, too_easy, paid_out, etc.
+  });
+
+  useEffect(() => {
+    fetchRepos();
+    fetchAccounts();
+  }, []);
+
+  const fetchAccounts = async () => {
+    try {
+      const response = await api.get('/accounts', { params: { limit: 1000 } });
+      setAccounts(response.data.accounts || []);
+    } catch (error) {
+      message.error('Failed to fetch accounts');
+    }
+  };
+
+  useEffect(() => {
+    fetchCommits();
+  }, [pagination.current, pagination.pageSize, sortField, sortOrder, filters]);
+
+  const fetchRepos = async () => {
+    try {
+      const response = await api.get('/repos', { params: { limit: 1000 } });
+      setRepos(response.data.repos || []);
+    } catch (error) {
+      message.error('Failed to fetch repositories');
+    }
+  };
+
+  const fetchCommits = async () => {
+    setLoading(true);
+    try {
+      const params = {
+        limit: pagination.pageSize,
+        offset: (pagination.current - 1) * pagination.pageSize,
+        sort_field: sortField,
+        sort_order: sortOrder,
+      };
+
+      // Add all filters (except status, which is filtered client-side)
+      Object.keys(filters).forEach(key => {
+        const value = filters[key];
+        if (value !== null && value !== '' && value !== false && key !== 'status') {
+          if (key === 'date_range' && value && value.length === 2) {
+            params.date_from = value[0].format('YYYY-MM-DD');
+            params.date_to = value[1].format('YYYY-MM-DD');
+          } else if (key !== 'date_range') {
+            params[key] = value;
+          }
+        }
+      });
+
+      // If status filter is active, fetch more records for client-side filtering
+      if (filters.status) {
+        params.limit = 10000; // Fetch large number for client-side filtering
+        params.offset = 0;
+      }
+
+      const response = await api.get('/commits', { params });
+      let commitsData = response.data.commits || [];
+      
+      // Client-side filtering by status (since status is computed from multiple sources)
+      if (filters.status) {
+        commitsData = commitsData.filter(commit => {
+          const displayStatus = commit.displayStatus || 'available';
+          return displayStatus === filters.status;
+        });
+        // Update total for client-side filtered results
+        setTotal(commitsData.length);
+        // Apply pagination to filtered results
+        const start = (pagination.current - 1) * pagination.pageSize;
+        const end = start + pagination.pageSize;
+        commitsData = commitsData.slice(start, end);
+      } else {
+        setTotal(response.data.total || 0);
+      }
+      
+      setCommits(commitsData);
+    } catch (error) {
+      message.error('Failed to fetch commits');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleTableChange = (newPagination, newFilters, newSorter) => {
+    if (newSorter && newSorter.field) {
+      // Map frontend field names to backend field names
+      const fieldMap = {
+        'baseCommit': 'base_commit',
+        'mergedCommit': 'merged_commit',
+        'commitDate': 'commit_date',
+        'fileChanges': 'file_changes',
+        'netChange': 'net_change',
+        'habitateScore': 'habitate_score',
+        'difficultyScore': 'difficulty_score',
+        'suitabilityScore': 'suitability_score',
+        'prNumber': 'pr_number',
+      };
+      const backendField = fieldMap[newSorter.field] || newSorter.field;
+      setSortField(backendField);
+      setSortOrder(newSorter.order === 'ascend' ? 'ASC' : 'DESC');
+    } else {
+      // Reset to default if no sorter
+      setSortField('habitate_score');
+      setSortOrder('DESC');
+    }
+    setPagination(newPagination);
+  };
+
+  const handleFilterChange = (key, value) => {
+    setFilters({ ...filters, [key]: value });
+    setPagination({ ...pagination, current: 1 });
+  };
+
+  const handleClearFilters = () => {
+    setFilters({
+      repo_id: null,
+      min_habitate_score: null,
+      max_habitate_score: null,
+      min_difficulty_score: null,
+      max_difficulty_score: null,
+      min_suitability_score: null,
+      max_suitability_score: null,
+      min_additions: null,
+      max_additions: null,
+      min_deletions: null,
+      max_deletions: null,
+      min_net_change: null,
+      max_net_change: null,
+      min_file_changes: null,
+      max_file_changes: null,
+      is_merge: null,
+      author: '',
+      merged_commit: '',
+      base_commit: '',
+      pr_number: '',
+      message: '',
+      date_range: null,
+      has_dependency_changes: false,
+      is_unsuitable: null,
+      is_behavior_preserving_refactor: null,
+      single_file_200plus: false,
+      multi_file_300plus: false,
+      status: null,
+    });
+    setPagination({ ...pagination, current: 1 });
+  };
+
+  const getScoreColor = (score, maxScore = 100) => {
+    if (!score) return 'default';
+    const percentage = (score / maxScore) * 100;
+    if (percentage >= 80) return 'success';
+    if (percentage >= 50) return 'warning';
+    return 'error';
+  };
+
+  const getStatusColor = (status) => {
+    const statusMap = {
+      'available': 'success',
+      'reserved': 'processing',
+      'already_reserved': 'error',
+      'unavailable': 'default',
+      'too_easy': 'warning',
+      'paid_out': 'purple',
+      'pending_admin_approval': 'blue',
+      'failed': 'error',
+      'error': 'error',
+    };
+    return statusMap[status] || 'default';
+  };
+
+  const getStatusText = (status) => {
+    const textMap = {
+      'available': 'Available',
+      'reserved': 'Reserved',
+      'already_reserved': 'Already Reserved',
+      'unavailable': 'Unavailable',
+      'too_easy': 'Too Easy',
+      'paid_out': 'Paid Out',
+      'pending_admin_approval': 'Pending Approval',
+      'failed': 'Failed',
+      'error': 'Error',
+    };
+    return textMap[status] || status;
+  };
+
+  const handleMemo = async (commitId, isInMemo) => {
+    setActionLoading({ ...actionLoading, [`memo-${commitId}`]: true });
+    try {
+      if (isInMemo) {
+        await api.delete(`/commits/${commitId}/memo`);
+        message.success('Removed from memo');
+      } else {
+        await api.post(`/commits/${commitId}/memo`);
+        message.success('Added to memo');
+      }
+      fetchCommits();
+    } catch (error) {
+      message.error(error.response?.data?.error || 'Failed to update memo');
+    } finally {
+      setActionLoading({ ...actionLoading, [`memo-${commitId}`]: false });
+    }
+  };
+
+  const handleReserve = (commit) => {
+    setSelectedCommit(commit);
+    setSelectedAccountId(null);
+    setReserveModalVisible(true);
+  };
+
+  const handleReserveConfirm = async () => {
+    if (!selectedAccountId) {
+      message.error('Please select an account');
+      return;
+    }
+    setActionLoading({ ...actionLoading, [`reserve-${selectedCommit.id}`]: true });
+    try {
+      await api.post(`/commits/${selectedCommit.id}/reserve`, {
+        account_id: selectedAccountId
+      });
+      message.success('Commit reserved successfully');
+      setReserveModalVisible(false);
+      fetchCommits();
+    } catch (error) {
+      message.error(error.response?.data?.error || 'Failed to reserve commit');
+    } finally {
+      setActionLoading({ ...actionLoading, [`reserve-${selectedCommit.id}`]: false });
+    }
+  };
+
+  const handleCancelReserve = async (commitId) => {
+    setActionLoading({ ...actionLoading, [`cancel-${commitId}`]: true });
+    try {
+      await api.delete(`/commits/${commitId}/reserve`);
+      message.success('Reservation cancelled');
+      fetchCommits();
+    } catch (error) {
+      message.error(error.response?.data?.error || 'Failed to cancel reservation');
+    } finally {
+      setActionLoading({ ...actionLoading, [`cancel-${commitId}`]: false });
+    }
+  };
+
+  const handleMarkUnsuitable = async (commitId, isUnsuitable) => {
+    setActionLoading({ ...actionLoading, [`unsuitable-${commitId}`]: true });
+    try {
+      if (isUnsuitable) {
+        await api.post(`/commits/${commitId}/unmark-unsuitable`);
+        message.success('Commit unmarked as unsuitable');
+      } else {
+        await api.post(`/commits/${commitId}/mark-unsuitable`);
+        message.success('Commit marked as unsuitable');
+      }
+      fetchCommits();
+    } catch (error) {
+      message.error(error.response?.data?.error || 'Failed to update unsuitable status');
+    } finally {
+      setActionLoading({ ...actionLoading, [`unsuitable-${commitId}`]: false });
+    }
+  };
+
+  const columns = [
+    {
+      title: 'ID',
+      dataIndex: 'id',
+      key: 'id',
+      width: 80,
+      sorter: true,
+    },
+    {
+      title: 'Repository',
+      key: 'repo',
+      width: 180,
+      fixed: 'left',
+      sorter: false,
+      render: (_, record) => record.repo?.fullName || record.repo?.repoName || '-',
+    },
+    {
+      title: 'Base Commit',
+      dataIndex: 'baseCommit',
+      key: 'baseCommit',
+      width: 180,
+      fixed: 'left',
+      sorter: true,
+      render: (hash, record) => {
+        if (!hash) return '-';
+        const repoUrl = record.repo?.fullName ? `https://github.com/${record.repo.fullName}` : '';
+        const commitUrl = repoUrl ? `${repoUrl}/commit/${hash}` : '';
+        const handleCopy = async (e) => {
+          e.stopPropagation();
+          try {
+            await navigator.clipboard.writeText(hash);
+            message.success('Commit hash copied!');
+          } catch (err) {
+            // Fallback for older browsers
+            const textArea = document.createElement('textarea');
+            textArea.value = hash;
+            textArea.style.position = 'fixed';
+            textArea.style.opacity = '0';
+            document.body.appendChild(textArea);
+            textArea.select();
+            try {
+              document.execCommand('copy');
+              message.success('Commit hash copied!');
+            } catch (err2) {
+              message.error('Failed to copy hash');
+            }
+            document.body.removeChild(textArea);
+          }
+        };
+        return (
+          <Space size="small">
+            <code style={{ fontSize: 11 }}>{hash.substring(0, 8)}</code>
+            <Tooltip title="Copy full hash">
+              <Button
+                type="text"
+                size="small"
+                icon={<CopyOutlined />}
+                onClick={handleCopy}
+                style={{ padding: '0 4px', height: 'auto' }}
+              />
+            </Tooltip>
+            {commitUrl && (
+              <Tooltip title="Open on GitHub">
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<LinkOutlined />}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    window.open(commitUrl, '_blank');
+                  }}
+                  style={{ padding: '0 4px', height: 'auto' }}
+                />
+              </Tooltip>
+            )}
+          </Space>
+        );
+      },
+    },
+    {
+      title: 'Merged Commit',
+      dataIndex: 'mergedCommit',
+      key: 'mergedCommit',
+      width: 180,
+      fixed: 'left',
+      sorter: true,
+      render: (hash, record) => {
+        if (!hash) return '-';
+        const repoUrl = record.repo?.fullName ? `https://github.com/${record.repo.fullName}` : '';
+        const commitUrl = repoUrl ? `${repoUrl}/commit/${hash}` : '';
+        const handleCopy = async (e) => {
+          e.stopPropagation();
+          try {
+            await navigator.clipboard.writeText(hash);
+            message.success('Commit hash copied!');
+          } catch (err) {
+            // Fallback for older browsers
+            const textArea = document.createElement('textarea');
+            textArea.value = hash;
+            textArea.style.position = 'fixed';
+            textArea.style.opacity = '0';
+            document.body.appendChild(textArea);
+            textArea.select();
+            try {
+              document.execCommand('copy');
+              message.success('Commit hash copied!');
+            } catch (err2) {
+              message.error('Failed to copy hash');
+            }
+            document.body.removeChild(textArea);
+          }
+        };
+        return (
+          <Space size="small">
+            <code style={{ fontSize: 11 }}>{hash.substring(0, 8)}</code>
+            <Tooltip title="Copy full hash">
+              <Button
+                type="text"
+                size="small"
+                icon={<CopyOutlined />}
+                onClick={handleCopy}
+                style={{ padding: '0 4px', height: 'auto' }}
+              />
+            </Tooltip>
+            {commitUrl && (
+              <Tooltip title="Open on GitHub">
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<LinkOutlined />}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    window.open(commitUrl, '_blank');
+                  }}
+                  style={{ padding: '0 4px', height: 'auto' }}
+                />
+              </Tooltip>
+            )}
+          </Space>
+        );
+      },
+    },
+    {
+      title: 'PR #',
+      dataIndex: 'prNumber',
+      key: 'prNumber',
+      width: 120,
+      fixed: 'left',
+      align: 'center',
+      sorter: true,
+      render: (num, record) => {
+        if (!num) return '-';
+        const repoUrl = record.repo?.fullName ? `https://github.com/${record.repo.fullName}` : '';
+        const prUrl = repoUrl ? `${repoUrl}/pull/${num}` : '';
+        return (
+          <Space size="small">
+            <span>{num}</span>
+            {prUrl && (
+              <Tooltip title="Open PR on GitHub">
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<LinkOutlined />}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    window.open(prUrl, '_blank');
+                  }}
+                  style={{ padding: '0 4px', height: 'auto' }}
+                />
+              </Tooltip>
+            )}
+          </Space>
+        );
+      },
+    },
+    {
+      title: 'Files',
+      dataIndex: 'fileChanges',
+      key: 'fileChanges',
+      width: 80,
+      align: 'center',
+      sorter: true,
+    },
+    {
+      title: 'Additions',
+      dataIndex: 'additions',
+      key: 'additions',
+      width: 100,
+      align: 'center',
+      sorter: true,
+      render: (val) => <span style={{ color: '#52c41a' }}>+{val || 0}</span>,
+    },
+    {
+      title: 'Deletions',
+      dataIndex: 'deletions',
+      key: 'deletions',
+      width: 100,
+      align: 'center',
+      sorter: true,
+      render: (val) => <span style={{ color: '#ff4d4f' }}>-{val || 0}</span>,
+    },
+    {
+      title: 'Net Change',
+      dataIndex: 'netChange',
+      key: 'netChange',
+      width: 100,
+      align: 'center',
+      sorter: true,
+      render: (val) => {
+        const color = val >= 0 ? '#52c41a' : '#ff4d4f';
+        return <span style={{ color }}>{val >= 0 ? '+' : ''}{val || 0}</span>;
+      },
+    },
+    {
+      title: 'Habitat Score',
+      dataIndex: 'habitateScore',
+      key: 'habitateScore',
+      width: 120,
+      align: 'center',
+      sorter: true,
+      render: (score) => (
+        <Tag color={getScoreColor(score, 150)}>{score || 0}</Tag>
+      ),
+    },
+    {
+      title: 'Difficulty',
+      dataIndex: 'difficultyScore',
+      key: 'difficultyScore',
+      width: 100,
+      align: 'center',
+      sorter: true,
+      render: (score) => score ? (
+        <Tag color={getScoreColor(score, 100)}>{parseFloat(score).toFixed(1)}</Tag>
+      ) : '-',
+    },
+    {
+      title: 'Suitability',
+      dataIndex: 'suitabilityScore',
+      key: 'suitabilityScore',
+      width: 100,
+      align: 'center',
+      sorter: true,
+      render: (score) => score ? (
+        <Tag color={getScoreColor(score, 100)}>{parseFloat(score).toFixed(1)}</Tag>
+      ) : '-',
+    },
+    {
+      title: 'Flags',
+      key: 'flags',
+      width: 200,
+      render: (_, record) => (
+        <Space size="small" wrap>
+          {record.isMerge && <Tag color="blue">Merge</Tag>}
+          {record.hasDependencyChanges && <Tag color="error">Deps</Tag>}
+          {record.isBehaviorPreservingRefactor && <Tag color="warning">Refactor</Tag>}
+          {record.isUnsuitable && <Tag color="error">Unsuitable</Tag>}
+          {record.testCoverageScore && (
+            <Tag color="success">Test: {(parseFloat(record.testCoverageScore) * 100).toFixed(0)}%</Tag>
+          )}
+        </Space>
+      ),
+    },
+    {
+      title: 'Status',
+      key: 'status',
+      width: 150,
+      fixed: 'right',
+      render: (_, record) => {
+        const status = record.displayStatus || 'available';
+        const expiresAt = record.expiresAt;
+        return (
+          <Space direction="vertical" size="small" style={{ width: '100%' }}>
+            <Tag color={getStatusColor(status)}>
+              {getStatusText(status)}
+            </Tag>
+            {expiresAt && (
+              <Tooltip title={`Expires: ${dayjs(expiresAt).format('YYYY-MM-DD HH:mm')}`}>
+                <Tag color="default" icon={<ClockCircleOutlined />}>
+                  {dayjs(expiresAt).fromNow()}
+                </Tag>
+              </Tooltip>
+            )}
+          </Space>
+        );
+      },
+    },
+    {
+      title: 'Actions',
+      key: 'actions',
+      width: 200,
+      fixed: 'right',
+      render: (_, record) => {
+        const isReserved = record.userReservation && record.userReservation.status === 'reserved';
+        const isInMemo = record.isInMemo;
+        const isUnsuitable = record.isUnsuitable;
+        
+        return (
+          <Space size="small">
+            <Tooltip title={isInMemo ? 'Remove from memo' : 'Add to memo'}>
+              <Button
+                type="text"
+                size="small"
+                icon={<BookOutlined />}
+                onClick={() => handleMemo(record.id, isInMemo)}
+                loading={actionLoading[`memo-${record.id}`]}
+                style={{
+                  color: isInMemo ? '#faad14' : '#8c8c8c',
+                  padding: '4px 8px',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'rgba(250, 173, 20, 0.1)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'transparent';
+                }}
+              />
+            </Tooltip>
+            {isReserved ? (
+              <Popconfirm
+                title="Cancel reservation?"
+                onConfirm={() => handleCancelReserve(record.id)}
+                okText="Yes"
+                cancelText="No"
+              >
+                <Tooltip title="Cancel reservation">
+                  <Button
+                    type="text"
+                    size="small"
+                    icon={<CloseCircleOutlined />}
+                    loading={actionLoading[`cancel-${record.id}`]}
+                    style={{
+                      color: '#52c41a',
+                      padding: '4px 8px',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = 'rgba(82, 196, 26, 0.1)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = 'transparent';
+                    }}
+                  />
+                </Tooltip>
+              </Popconfirm>
+            ) : (
+              <Tooltip title="Reserve commit">
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<CheckCircleOutlined />}
+                  onClick={() => handleReserve(record)}
+                  loading={actionLoading[`reserve-${record.id}`]}
+                  disabled={record.displayStatus === 'already_reserved' || record.displayStatus === 'unavailable'}
+                  style={{
+                    color: '#1890ff',
+                    padding: '4px 8px',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = 'rgba(24, 144, 255, 0.1)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'transparent';
+                  }}
+                />
+              </Tooltip>
+            )}
+            <Tooltip title={isUnsuitable ? 'Unmark as unsuitable' : 'Mark as unsuitable'}>
+              <Button
+                type="text"
+                size="small"
+                icon={<ExclamationCircleOutlined />}
+                onClick={() => handleMarkUnsuitable(record.id, isUnsuitable)}
+                loading={actionLoading[`unsuitable-${record.id}`]}
+                style={{
+                  color: isUnsuitable ? '#ff4d4f' : '#8c8c8c',
+                  padding: '4px 8px',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = isUnsuitable ? 'rgba(255, 77, 79, 0.1)' : 'rgba(140, 140, 140, 0.1)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'transparent';
+                }}
+              />
+            </Tooltip>
+          </Space>
+        );
+      },
+    },
+    {
+      title: 'Message',
+      dataIndex: 'message',
+      key: 'message',
+      width: 300,
+      ellipsis: true,
+      render: (msg) => msg ? (
+        <Tooltip title={msg}>
+          <span>{msg.substring(0, 50)}{msg.length > 50 ? '...' : ''}</span>
+        </Tooltip>
+      ) : '-',
+    },
+  ];
+
+  const activeFiltersCount = useMemo(() => {
+    let count = 0;
+    Object.keys(filters).forEach(key => {
+      const value = filters[key];
+      if (value !== null && value !== '' && value !== false) {
+        if (key === 'date_range' && value && value.length === 2) {
+          count++;
+        } else if (key !== 'date_range') {
+          count++;
+        }
+      }
+    });
+    return count;
+  }, [filters]);
+
   return (
     <div>
-      <Title level={2} style={{ color: 'rgb(241, 245, 249)' }}>
-        Commits
-      </Title>
-      <p style={{ color: 'rgb(148, 163, 184)' }}>Coming soon...</p>
+      <Card
+        style={{
+          background: '#1e293b',
+          border: '1px solid #334155',
+        }}
+      >
+        <Row justify="space-between" align="middle" style={{ marginBottom: 24 }}>
+          <Col>
+            <Title level={2} style={{ color: 'rgb(241, 245, 249)', margin: 0 }}>
+              Commits
+            </Title>
+          </Col>
+          <Col>
+            <Space>
+              <Button
+                icon={<FilterOutlined />}
+                onClick={() => setShowFilters(!showFilters)}
+                type={showFilters ? 'primary' : 'default'}
+              >
+                Filters {activeFiltersCount > 0 && `(${activeFiltersCount})`}
+              </Button>
+              <Button
+                icon={<ClearOutlined />}
+                onClick={handleClearFilters}
+                disabled={activeFiltersCount === 0}
+              >
+                Clear
+              </Button>
+              <Button
+                icon={<ReloadOutlined />}
+                onClick={fetchCommits}
+              >
+                Refresh
+              </Button>
+            </Space>
+          </Col>
+        </Row>
+
+        {showFilters && (
+          <Card
+            style={{
+              background: '#0f172a',
+              border: '1px solid #334155',
+              marginBottom: 16,
+            }}
+          >
+            <Row gutter={[16, 16]}>
+              {/* Repository */}
+              <Col xs={24} sm={12} md={8} lg={6}>
+                <Text style={{ color: 'rgb(148, 163, 184)', fontSize: 12, display: 'block', marginBottom: 4 }}>
+                  Repository
+                </Text>
+                <Select
+                  size="large"
+                  placeholder="All Repositories"
+                  style={{ width: '100%' }}
+                  allowClear
+                  value={filters.repo_id}
+                  onChange={(value) => handleFilterChange('repo_id', value)}
+                >
+                  {repos.map(repo => (
+                    <Option key={repo.id} value={repo.id}>{repo.fullName}</Option>
+                  ))}
+                </Select>
+              </Col>
+
+              {/* Score Ranges */}
+              <Col xs={24} sm={12} md={8} lg={6}>
+                <Text style={{ color: 'rgb(148, 163, 184)', fontSize: 12, display: 'block', marginBottom: 4 }}>
+                  Habitat Score
+                </Text>
+                <Input.Group compact>
+                  <InputNumber
+                    size="large"
+                    placeholder="Min"
+                    style={{ width: '50%' }}
+                    min={0}
+                    max={150}
+                    value={filters.min_habitate_score}
+                    onChange={(value) => handleFilterChange('min_habitate_score', value)}
+                  />
+                  <InputNumber
+                    size="large"
+                    placeholder="Max"
+                    style={{ width: '50%' }}
+                    min={0}
+                    max={150}
+                    value={filters.max_habitate_score}
+                    onChange={(value) => handleFilterChange('max_habitate_score', value)}
+                  />
+                </Input.Group>
+              </Col>
+
+              <Col xs={24} sm={12} md={8} lg={6}>
+                <Text style={{ color: 'rgb(148, 163, 184)', fontSize: 12, display: 'block', marginBottom: 4 }}>
+                  Difficulty Score
+                </Text>
+                <Input.Group compact>
+                  <InputNumber
+                    size="large"
+                    placeholder="Min"
+                    style={{ width: '50%' }}
+                    min={0}
+                    max={100}
+                    step={0.1}
+                    value={filters.min_difficulty_score}
+                    onChange={(value) => handleFilterChange('min_difficulty_score', value)}
+                  />
+                  <InputNumber
+                    size="large"
+                    placeholder="Max"
+                    style={{ width: '50%' }}
+                    min={0}
+                    max={100}
+                    step={0.1}
+                    value={filters.max_difficulty_score}
+                    onChange={(value) => handleFilterChange('max_difficulty_score', value)}
+                  />
+                </Input.Group>
+              </Col>
+
+              <Col xs={24} sm={12} md={8} lg={6}>
+                <Text style={{ color: 'rgb(148, 163, 184)', fontSize: 12, display: 'block', marginBottom: 4 }}>
+                  Suitability Score
+                </Text>
+                <Input.Group compact>
+                  <InputNumber
+                    size="large"
+                    placeholder="Min"
+                    style={{ width: '50%' }}
+                    min={0}
+                    max={100}
+                    step={0.1}
+                    value={filters.min_suitability_score}
+                    onChange={(value) => handleFilterChange('min_suitability_score', value)}
+                  />
+                  <InputNumber
+                    size="large"
+                    placeholder="Max"
+                    style={{ width: '50%' }}
+                    min={0}
+                    max={100}
+                    step={0.1}
+                    value={filters.max_suitability_score}
+                    onChange={(value) => handleFilterChange('max_suitability_score', value)}
+                  />
+                </Input.Group>
+              </Col>
+
+              {/* File Statistics */}
+              <Col xs={24} sm={12} md={8} lg={6}>
+                <Text style={{ color: 'rgb(148, 163, 184)', fontSize: 12, display: 'block', marginBottom: 4 }}>
+                  Additions
+                </Text>
+                <Input.Group compact>
+                  <InputNumber
+                    size="large"
+                    placeholder="Min"
+                    style={{ width: '50%' }}
+                    min={0}
+                    value={filters.min_additions}
+                    onChange={(value) => handleFilterChange('min_additions', value)}
+                  />
+                  <InputNumber
+                    size="large"
+                    placeholder="Max"
+                    style={{ width: '50%' }}
+                    min={0}
+                    value={filters.max_additions}
+                    onChange={(value) => handleFilterChange('max_additions', value)}
+                  />
+                </Input.Group>
+              </Col>
+
+              <Col xs={24} sm={12} md={8} lg={6}>
+                <Text style={{ color: 'rgb(148, 163, 184)', fontSize: 12, display: 'block', marginBottom: 4 }}>
+                  Deletions
+                </Text>
+                <Input.Group compact>
+                  <InputNumber
+                    size="large"
+                    placeholder="Min"
+                    style={{ width: '50%' }}
+                    min={0}
+                    value={filters.min_deletions}
+                    onChange={(value) => handleFilterChange('min_deletions', value)}
+                  />
+                  <InputNumber
+                    size="large"
+                    placeholder="Max"
+                    style={{ width: '50%' }}
+                    min={0}
+                    value={filters.max_deletions}
+                    onChange={(value) => handleFilterChange('max_deletions', value)}
+                  />
+                </Input.Group>
+              </Col>
+
+              <Col xs={24} sm={12} md={8} lg={6}>
+                <Text style={{ color: 'rgb(148, 163, 184)', fontSize: 12, display: 'block', marginBottom: 4 }}>
+                  Net Change
+                </Text>
+                <Input.Group compact>
+                  <InputNumber
+                    size="large"
+                    placeholder="Min"
+                    style={{ width: '50%' }}
+                    value={filters.min_net_change}
+                    onChange={(value) => handleFilterChange('min_net_change', value)}
+                  />
+                  <InputNumber
+                    size="large"
+                    placeholder="Max"
+                    style={{ width: '50%' }}
+                    value={filters.max_net_change}
+                    onChange={(value) => handleFilterChange('max_net_change', value)}
+                  />
+                </Input.Group>
+              </Col>
+
+              <Col xs={24} sm={12} md={8} lg={6}>
+                <Text style={{ color: 'rgb(148, 163, 184)', fontSize: 12, display: 'block', marginBottom: 4 }}>
+                  File Changes
+                </Text>
+                <Input.Group compact>
+                  <InputNumber
+                    size="large"
+                    placeholder="Min"
+                    style={{ width: '50%' }}
+                    min={0}
+                    value={filters.min_file_changes}
+                    onChange={(value) => handleFilterChange('min_file_changes', value)}
+                  />
+                  <InputNumber
+                    size="large"
+                    placeholder="Max"
+                    style={{ width: '50%' }}
+                    min={0}
+                    value={filters.max_file_changes}
+                    onChange={(value) => handleFilterChange('max_file_changes', value)}
+                  />
+                </Input.Group>
+              </Col>
+
+              {/* Text Search */}
+              <Col xs={24} sm={12} md={8} lg={6}>
+                <Text style={{ color: 'rgb(148, 163, 184)', fontSize: 12, display: 'block', marginBottom: 4 }}>
+                  Author
+                </Text>
+                <Input
+                  size="large"
+                  placeholder="Search author"
+                  value={filters.author}
+                  onChange={(e) => handleFilterChange('author', e.target.value)}
+                  allowClear
+                />
+              </Col>
+
+              <Col xs={24} sm={12} md={8} lg={6}>
+                <Text style={{ color: 'rgb(148, 163, 184)', fontSize: 12, display: 'block', marginBottom: 4 }}>
+                  Base Commit
+                </Text>
+                <Input
+                  size="large"
+                  placeholder="Search base commit"
+                  value={filters.base_commit}
+                  onChange={(e) => handleFilterChange('base_commit', e.target.value)}
+                  allowClear
+                />
+              </Col>
+
+              <Col xs={24} sm={12} md={8} lg={6}>
+                <Text style={{ color: 'rgb(148, 163, 184)', fontSize: 12, display: 'block', marginBottom: 4 }}>
+                  Merged Commit
+                </Text>
+                <Input
+                  size="large"
+                  placeholder="Search merged commit"
+                  value={filters.merged_commit}
+                  onChange={(e) => handleFilterChange('merged_commit', e.target.value)}
+                  allowClear
+                />
+              </Col>
+
+              <Col xs={24} sm={12} md={8} lg={6}>
+                <Text style={{ color: 'rgb(148, 163, 184)', fontSize: 12, display: 'block', marginBottom: 4 }}>
+                  PR Number
+                </Text>
+                <InputNumber
+                  size="large"
+                  placeholder="PR #"
+                  style={{ width: '100%' }}
+                  min={1}
+                  value={filters.pr_number}
+                  onChange={(value) => handleFilterChange('pr_number', value)}
+                />
+              </Col>
+
+              <Col xs={24} sm={12} md={8} lg={6}>
+                <Text style={{ color: 'rgb(148, 163, 184)', fontSize: 12, display: 'block', marginBottom: 4 }}>
+                  Message
+                </Text>
+                <Input
+                  size="large"
+                  placeholder="Search in message"
+                  value={filters.message}
+                  onChange={(e) => handleFilterChange('message', e.target.value)}
+                  allowClear
+                />
+              </Col>
+
+              {/* Date Range */}
+              <Col xs={24} sm={12} md={8} lg={6}>
+                <Text style={{ color: 'rgb(148, 163, 184)', fontSize: 12, display: 'block', marginBottom: 4 }}>
+                  Commit Date
+                </Text>
+                <RangePicker
+                  size="large"
+                  style={{ width: '100%' }}
+                  value={filters.date_range}
+                  onChange={(dates) => handleFilterChange('date_range', dates)}
+                  format="YYYY-MM-DD"
+                />
+              </Col>
+
+              {/* Boolean Filters */}
+              <Col xs={24} sm={12} md={8} lg={6}>
+                <Text style={{ color: 'rgb(148, 163, 184)', fontSize: 12, display: 'block', marginBottom: 4 }}>
+                  Is Merge
+                </Text>
+                <Select
+                  size="large"
+                  placeholder="All"
+                  style={{ width: '100%' }}
+                  allowClear
+                  value={filters.is_merge}
+                  onChange={(value) => handleFilterChange('is_merge', value)}
+                >
+                  <Option value={true}>Yes</Option>
+                  <Option value={false}>No</Option>
+                </Select>
+              </Col>
+
+              <Col xs={24} sm={12} md={8} lg={6}>
+                <Text style={{ color: 'rgb(148, 163, 184)', fontSize: 12, display: 'block', marginBottom: 4 }}>
+                  Unsuitable
+                </Text>
+                <Select
+                  size="large"
+                  placeholder="All"
+                  style={{ width: '100%' }}
+                  allowClear
+                  value={filters.is_unsuitable}
+                  onChange={(value) => handleFilterChange('is_unsuitable', value)}
+                >
+                  <Option value={true}>Yes</Option>
+                  <Option value={false}>No</Option>
+                </Select>
+              </Col>
+
+              <Col xs={24} sm={12} md={8} lg={6}>
+                <Text style={{ color: 'rgb(148, 163, 184)', fontSize: 12, display: 'block', marginBottom: 4 }}>
+                  Behavior Preserving Refactor
+                </Text>
+                <Select
+                  size="large"
+                  placeholder="All"
+                  style={{ width: '100%' }}
+                  allowClear
+                  value={filters.is_behavior_preserving_refactor}
+                  onChange={(value) => handleFilterChange('is_behavior_preserving_refactor', value)}
+                >
+                  <Option value={true}>Yes</Option>
+                  <Option value={false}>No</Option>
+                </Select>
+              </Col>
+
+              <Col xs={24} sm={12} md={8} lg={6}>
+                <Text style={{ color: 'rgb(148, 163, 184)', fontSize: 12, display: 'block', marginBottom: 4 }}>
+                  Status
+                </Text>
+                <Select
+                  size="large"
+                  placeholder="All Status"
+                  style={{ width: '100%' }}
+                  allowClear
+                  value={filters.status}
+                  onChange={(value) => handleFilterChange('status', value)}
+                >
+                  <Option value="available">Available</Option>
+                  <Option value="reserved">Reserved</Option>
+                  <Option value="already_reserved">Already Reserved</Option>
+                  <Option value="unavailable">Unavailable</Option>
+                  <Option value="too_easy">Too Easy</Option>
+                  <Option value="paid_out">Paid Out</Option>
+                  <Option value="pending_admin_approval">Pending Approval</Option>
+                  <Option value="failed">Failed</Option>
+                  <Option value="error">Error</Option>
+                </Select>
+              </Col>
+
+              {/* Special Pattern Filters */}
+              <Col xs={24} sm={12} md={8} lg={6}>
+                <Space direction="vertical" style={{ width: '100%' }}>
+                  <Checkbox
+                    checked={filters.has_dependency_changes === false}
+                    onChange={(e) => handleFilterChange('has_dependency_changes', !e.target.checked ? null : false)}
+                  >
+                    No Dependency Changes
+                  </Checkbox>
+                  <Checkbox
+                    checked={filters.single_file_200plus}
+                    onChange={(e) => handleFilterChange('single_file_200plus', e.target.checked)}
+                  >
+                    Single File 200+ Additions
+                  </Checkbox>
+                  <Checkbox
+                    checked={filters.multi_file_300plus}
+                    onChange={(e) => handleFilterChange('multi_file_300plus', e.target.checked)}
+                  >
+                    Multi File 300+ Additions
+                  </Checkbox>
+                </Space>
+              </Col>
+            </Row>
+          </Card>
+        )}
+
+        <Table
+          columns={columns}
+          dataSource={commits}
+          rowKey="id"
+          loading={loading}
+          pagination={{
+            ...pagination,
+            total: total,
+            showSizeChanger: true,
+            showTotal: (total) => `Total ${total} commits`,
+            pageSizeOptions: ['10', '20', '50', '100', '200'],
+          }}
+          onChange={handleTableChange}
+          scroll={{ 
+            x: 'max-content',
+            y: 'calc(100vh - 400px)'
+          }}
+          sticky={{
+            offsetHeader: 0
+          }}
+          style={{
+            background: '#1e293b',
+          }}
+        />
+      </Card>
+
+      <Modal
+        title="Reserve Commit"
+        open={reserveModalVisible}
+        onOk={handleReserveConfirm}
+        onCancel={() => setReserveModalVisible(false)}
+        okText="Reserve"
+        cancelText="Cancel"
+        confirmLoading={selectedCommit && actionLoading[`reserve-${selectedCommit.id}`]}
+      >
+        {selectedCommit && (
+          <div>
+            <p><strong>Repository:</strong> {selectedCommit.repo?.fullName}</p>
+            <p><strong>Base Commit:</strong> <code>{selectedCommit.baseCommit?.substring(0, 8)}</code></p>
+            <p style={{ marginBottom: 16 }}>
+              <strong>Select Account:</strong>
+            </p>
+            <Select
+              size="large"
+              style={{ width: '100%' }}
+              placeholder="Select an account"
+              value={selectedAccountId}
+              onChange={setSelectedAccountId}
+            >
+              {accounts
+                .filter(acc => acc.isActive && acc.accountHealth !== 'exhausted' && acc.accountHealth !== 'error')
+                .map(account => (
+                  <Option key={account.id} value={account.id}>
+                    {account.accountName} ({account.remainingReversals || 0} remaining)
+                  </Option>
+                ))}
+            </Select>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 };

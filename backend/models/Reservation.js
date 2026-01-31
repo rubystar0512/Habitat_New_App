@@ -37,12 +37,12 @@ const Reservation = sequelize.define('Reservation', {
   habitatReservationId: {
     type: DataTypes.STRING(100),
     allowNull: true,
-    field: 'habitat_reservation_id'
+    field: 'reservation_id' // Database column is 'reservation_id'
   },
   status: {
-    type: DataTypes.ENUM('pending', 'active', 'expired', 'cancelled', 'completed'),
-    defaultValue: 'pending',
-    allowNull: false
+    type: DataTypes.ENUM('reserved', 'released', 'failed', 'expired'),
+    defaultValue: 'reserved',
+    allowNull: true
   },
   expiresAt: {
     type: DataTypes.DATE,
@@ -62,7 +62,7 @@ const Reservation = sequelize.define('Reservation', {
   cancelledAt: {
     type: DataTypes.DATE,
     allowNull: true,
-    field: 'cancelled_at'
+    field: 'released_at' // Database uses 'released_at' instead of 'cancelled_at'
   }
 }, {
   tableName: 'reservations',
@@ -74,7 +74,7 @@ const Reservation = sequelize.define('Reservation', {
     { fields: ['commit_id'] },
     { fields: ['status'] },
     { fields: ['expires_at'] },
-    { fields: ['habitat_reservation_id'] }
+    { fields: ['reservation_id'] }
   ]
 });
 

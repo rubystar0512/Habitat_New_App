@@ -38,37 +38,55 @@ const makeRequest = async (url, options = {}) => {
 };
 
 const claim = async (apiToken, apiUrl, repoId, commitHash) => {
-  const url = `${apiUrl}/api/claim`;
+  // Use the correct endpoint: /api/v1/commit-reservations/claim
+  const url = `${apiUrl.replace(/\/$/, '')}/api/v1/commit-reservations/claim`;
   
   const result = await makeRequest(url, {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${apiToken}`
+      'Authorization': `Bearer ${apiToken}`,
+      'Accept': 'application/json, text/plain, */*',
+      'User-Agent': 'HabitateWeb/1.0'
     },
     body: JSON.stringify({
-      repo_id: repoId,
+      repository_id: repoId, // Use repository_id, not repo_id
       commit_hash: commitHash
     })
   });
 
   if (!result.success) {
+    // Handle 409 (already reserved) as a special case
+    if (result.error && result.error.includes('409')) {
+      return {
+        success: false,
+        error: 'Commit already reserved by another user',
+        alreadyReserved: true
+      };
+    }
     return result;
   }
 
+  // Handle response format - check for id or reservation_id
+  const reservationId = result.data?.id || result.data?.reservation_id;
+  const expiresAt = result.data?.expires_at ? new Date(result.data.expires_at) : null;
+
   return {
     success: true,
-    reservationId: result.data.reservation_id,
-    expiresAt: result.data.expires_at ? new Date(result.data.expires_at) : null
+    reservationId: reservationId,
+    expiresAt: expiresAt
   };
 };
 
 const deleteReservation = async (apiToken, apiUrl, reservationId) => {
-  const url = `${apiUrl}/api/reservations/${reservationId}`;
+  // Use the correct endpoint: /api/v1/commit-reservations/{id}
+  const url = `${apiUrl.replace(/\/$/, '')}/api/v1/commit-reservations/${reservationId}`;
   
   const result = await makeRequest(url, {
     method: 'DELETE',
     headers: {
-      'Authorization': `Bearer ${apiToken}`
+      'Authorization': `Bearer ${apiToken}`,
+      'Accept': 'application/json, text/plain, */*',
+      'User-Agent': 'HabitateWeb/1.0'
     }
   });
 
@@ -76,12 +94,15 @@ const deleteReservation = async (apiToken, apiUrl, reservationId) => {
 };
 
 const getUnavailableCommits = async (apiToken, apiUrl, repoId) => {
-  const url = `${apiUrl}/api/repos/${repoId}/unavailable-commits`;
+  // Use the correct endpoint: /api/v1/code/repos/{id}/unavailable-commits
+  const url = `${apiUrl.replace(/\/$/, '')}/api/v1/code/repos/${repoId}/unavailable-commits`;
   
   const result = await makeRequest(url, {
     method: 'GET',
     headers: {
-      'Authorization': `Bearer ${apiToken}`
+      'Authorization': `Bearer ${apiToken}`,
+      'Accept': 'application/json, text/plain, */*',
+      'User-Agent': 'HabitateWeb/1.0'
     }
   });
 
@@ -91,7 +112,7 @@ const getUnavailableCommits = async (apiToken, apiUrl, repoId) => {
 
   return {
     success: true,
-    commits: result.data.commits || []
+    commits: result.data?.commits || result.data || []
   };
 };
 
@@ -115,9 +136,43 @@ const getMyReservations = async (apiToken, apiUrl) => {
   };
 };
 
+const checkAccountHealth = async (apiToken, apiUrl) => {
+  // Use the correct endpoint to get reservations
+  const url = `${apiUrl}/api/v1/commit-reservations/my-reservations?include_released=false`;
+  
+  const result = await makeRequest(url, {
+    method: 'GET',
+    headers: {
+      'Authorization': `Bearer ${apiToken}`
+    }
+  });
+  
+  if (!result.success) {
+    return {
+      success: false,
+      health: 'error',
+      error: result.error
+    };
+  }
+
+  // Handle different response formats
+  const reservations = result.data?.reservations || result.data || [];
+  const activeReservations = reservations.filter(r => {
+    // Filter active reservations (not released/expired)
+    return r.status === 'reserved' || r.status === 'active' || (!r.released && !r.expired);
+  }).length;
+  
+  return {
+    success: true,
+    activeReservations,
+    totalReservations: reservations.length
+  };
+};
+
 module.exports = {
   claim,
   deleteReservation,
   getUnavailableCommits,
-  getMyReservations
+  getMyReservations,
+  checkAccountHealth
 };
