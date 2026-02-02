@@ -304,25 +304,22 @@ router.get('/', commitFilterRules, paginationRules, handleValidationErrors, asyn
       }
     });
 
-    // Get status cache for user's accounts
+    // Get status cache (global per commit, no account filter needed)
     const statusCache = await CommitStatusCache.findAll({
       where: {
-        commitId: { [Op.in]: commitIds },
-        accountId: { [Op.in]: accountIds }
+        commitId: { [Op.in]: commitIds }
       },
-      attributes: ['commitId', 'accountId', 'status', 'expiresAt', 'checkedAt']
+      attributes: ['commitId', 'status', 'expiresAt', 'checkedAt']
     });
 
     // Build status map: commitId -> { status, expiresAt }
     const statusMap = {};
     statusCache.forEach(sc => {
-      if (!statusMap[sc.commitId] || new Date(sc.checkedAt) > new Date(statusMap[sc.commitId].checkedAt || 0)) {
-        statusMap[sc.commitId] = {
-          status: sc.status,
-          expiresAt: sc.expiresAt,
-          checkedAt: sc.checkedAt
-        };
-      }
+      statusMap[sc.commitId] = {
+        status: sc.status,
+        expiresAt: sc.expiresAt,
+        checkedAt: sc.checkedAt
+      };
     });
 
     // Build reservation map

@@ -18,7 +18,7 @@ const CommitStatusCache = sequelize.define('CommitStatusCache', {
   },
   accountId: {
     type: DataTypes.INTEGER,
-    allowNull: false,
+    allowNull: true, // Nullable - status is global per commit, not per account
     field: 'account_id',
     references: {
       model: 'user_habitat_accounts',
@@ -35,7 +35,8 @@ const CommitStatusCache = sequelize.define('CommitStatusCache', {
       'paid_out',
       'pending_admin_approval',
       'failed',
-      'error'
+      'error',
+      'in_distribution'
     ),
     allowNull: true,
     defaultValue: 'available'
@@ -55,9 +56,7 @@ const CommitStatusCache = sequelize.define('CommitStatusCache', {
   timestamps: false,
   underscored: true,
   indexes: [
-    { unique: true, fields: ['commit_id', 'account_id'], name: 'unique_status' },
-    { fields: ['commit_id'] },
-    { fields: ['account_id'] },
+    { unique: true, fields: ['commit_id'], name: 'unique_status' }, // One status per commit (global)
     { fields: ['status'] },
     { fields: ['expires_at'] },
     { fields: ['checked_at'] }

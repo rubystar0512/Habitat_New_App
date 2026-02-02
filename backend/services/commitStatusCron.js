@@ -41,38 +41,35 @@ class CommitStatusCronService {
   }
 
   /**
-   * Fetch commit statuses for all active accounts and repos
+   * Fetch commit statuses for all repos (status is global, not per account)
    */
   async fetchAllCommitStatuses() {
     console.log('[CommitStatusCron] Starting commit status fetch...');
     const startTime = Date.now();
 
     try {
-      // Get all active Habitat accounts
-      const accounts = await UserHabitatAccount.findAll({
+      // Get one active account to use for API calls (status is same for all accounts)
+      const account = await UserHabitatAccount.findOne({
         where: { isActive: true },
         attributes: ['id', 'userId', 'apiUrl', 'apiToken', 'accountName']
       });
 
-      if (accounts.length === 0) {
+      if (!account) {
         console.log('[CommitStatusCron] No active accounts found');
         return;
       }
 
-      console.log(`[CommitStatusCron] Found ${accounts.length} active account(s)`);
+      console.log(`[CommitStatusCron] Using account ${account.accountName} for status fetch (status is global)`);
 
       let totalUpdated = 0;
       let totalErrors = 0;
 
-      // Process each account
-      for (const account of accounts) {
-        try {
-          const updated = await this.fetchCommitStatusesForAccount(account);
-          totalUpdated += updated;
-        } catch (error) {
-          console.error(`[CommitStatusCron] Error processing account ${account.id} (${account.accountName}):`, error.message);
-          totalErrors++;
-        }
+      try {
+        const updated = await this.fetchCommitStatusesForAccount(account);
+        totalUpdated += updated;
+      } catch (error) {
+        console.error(`[CommitStatusCron] Error processing account ${account.id} (${account.accountName}):`, error.message);
+        totalErrors++;
       }
 
       const duration = Date.now() - startTime;
@@ -146,54 +143,78 @@ class CommitStatusCronService {
       const unavailableCommits = this.parseUnavailableCommitsCSV(result.commits || result.data || '');
 
       if (unavailableCommits.size === 0) {
-        // No unavailable commits means all commits are available
-        // We can optionally update all commits for this repo/account to 'available'
-        // For now, we'll just skip
+        // No unavailable commits returned from API - don't save anything
         return 0;
       }
 
-      // Get all commits for this repo
+      // Only save status for commits that are returned from the API (unavailable commits)
+      // Get commits that match the unavailable commits from API
+      const commitHashes = Array.from(unavailableCommits.keys());
+      
       const commits = await Commit.findAll({
-        where: { repoId: repo.id },
+        where: {
+          repoId: repo.id,
+          baseCommit: { [require('sequelize').Op.in]: commitHashes }
+        },
         attributes: ['id', 'baseCommit']
       });
 
+      // Get commit IDs that should have status (from API response)
+      const commitIdsToKeep = new Set(commits.map(c => c.id));
+
+      // Remove old cache entries for commits in this repo that are no longer unavailable
+      // (i.e., they were previously unavailable but are now available/not in API response)
+      const allRepoCommits = await Commit.findAll({
+        where: { repoId: repo.id },
+        attributes: ['id']
+      });
+      const allRepoCommitIds = allRepoCommits.map(c => c.id);
+      const commitIdsToRemove = allRepoCommitIds.filter(id => !commitIdsToKeep.has(id));
+
+      if (commitIdsToRemove.length > 0) {
+        await CommitStatusCache.destroy({
+          where: {
+            commitId: { [require('sequelize').Op.in]: commitIdsToRemove }
+          }
+        });
+      }
+
       let updatedCount = 0;
 
-      // Update status cache for each commit
+      // Only save status for commits returned from Habitat API
       for (const commit of commits) {
         const statusInfo = unavailableCommits.get(commit.baseCommit);
 
         if (statusInfo) {
-          // Commit is unavailable - update cache
-          const apiStatus = (statusInfo.status || '').trim();
+          // Commit is unavailable - save status from API
+          const apiStatus = (statusInfo.status || '').trim().toLowerCase();
           const expiresAt = statusInfo.expires_at ? new Date(statusInfo.expires_at) : null;
 
-          // Map 'reserved' to 'already_reserved' for consistency
-          const mappedStatus = apiStatus === 'reserved' ? 'already_reserved' : apiStatus;
+          // Map statuses for consistency and handle unknown statuses
+          const statusMap = {
+            'reserved': 'already_reserved',
+            'in_distribution': 'in_distribution',
+            'unavailable': 'unavailable',
+            'too_easy': 'too_easy',
+            'paid_out': 'paid_out',
+            'pending_admin_approval': 'pending_admin_approval',
+            'failed': 'failed',
+            'error': 'error'
+          };
 
-          // Upsert status cache
+          // Use mapped status or fallback to 'unavailable' if status is unknown
+          const mappedStatus = statusMap[apiStatus] || 'unavailable';
+
+          // Upsert status cache (global per commit, no account_id needed)
+          // Only save commits that are returned from API
           await CommitStatusCache.upsert({
             commitId: commit.id,
-            accountId: account.id,
-            status: mappedStatus || 'unavailable',
+            accountId: null, // Status is global, not per account
+            status: mappedStatus,
             expiresAt: expiresAt,
             checkedAt: new Date()
           }, {
-            conflictFields: ['commit_id', 'account_id']
-          });
-
-          updatedCount++;
-        } else {
-          // Commit is available - update cache to 'available'
-          await CommitStatusCache.upsert({
-            commitId: commit.id,
-            accountId: account.id,
-            status: 'available',
-            expiresAt: null,
-            checkedAt: new Date()
-          }, {
-            conflictFields: ['commit_id', 'account_id']
+            conflictFields: ['commit_id'] // One status per commit
           });
 
           updatedCount++;
