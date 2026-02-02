@@ -7,6 +7,7 @@ const { testConnection } = require('./config/database');
 const routes = require('./routes');
 const errorHandler = require('./middleware/errorHandler');
 const commitStatusCron = require('./services/commitStatusCron');
+const reservationsSyncCron = require('./services/reservationsSyncCron');
 
 const app = express();
 const server = http.createServer(app);
@@ -100,6 +101,7 @@ startServer();
 process.on('SIGTERM', () => {
   console.log('SIGTERM received, shutting down gracefully...');
   commitStatusCron.stop();
+  reservationsSyncCron.stop();
   server.close(() => {
     console.log('Server closed');
     process.exit(0);
@@ -109,6 +111,7 @@ process.on('SIGTERM', () => {
 process.on('SIGINT', () => {
   console.log('SIGINT received, shutting down gracefully...');
   commitStatusCron.stop();
+  reservationsSyncCron.stop();
   server.close(() => {
     console.log('Server closed');
     process.exit(0);

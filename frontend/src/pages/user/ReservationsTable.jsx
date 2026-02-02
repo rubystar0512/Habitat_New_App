@@ -40,6 +40,7 @@ const ReservationsTable = () => {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [releasing, setReleasing] = useState({});
+  const [stats, setStats] = useState({ total: 0, released: 0 });
   const [filters, setFilters] = useState({
     status: undefined,
     account: '',
@@ -501,54 +502,6 @@ const ReservationsTable = () => {
       )
     },
     {
-      title: 'Habitat Score',
-      dataIndex: 'habitate_score',
-      key: 'habitate_score',
-      width: 120,
-      sorter: true,
-      render: (score) => (
-        <Text style={{ color: 'rgb(148, 163, 184)', fontSize: 12 }}>
-          {score ?? '-'}
-        </Text>
-      )
-    },
-    {
-      title: 'Files',
-      dataIndex: 'file_changes',
-      key: 'file_changes',
-      width: 80,
-      sorter: true,
-      render: (count) => (
-        <Text style={{ color: 'rgb(148, 163, 184)', fontSize: 12 }}>
-          {count ?? '-'}
-        </Text>
-      )
-    },
-    {
-      title: 'Additions',
-      dataIndex: 'additions',
-      key: 'additions',
-      width: 100,
-      sorter: true,
-      render: (count) => (
-        <Text style={{ color: '#16a34a', fontSize: 12 }}>
-          {count ? `+${count}` : '-'}
-        </Text>
-      )
-    },
-    {
-      title: 'Deletions',
-      dataIndex: 'deletions',
-      key: 'deletions',
-      width: 100,
-      sorter: true,
-      render: (count) => (
-        <Text style={{ color: '#ef4444', fontSize: 12 }}>
-          {count ? `-${count}` : '-'}
-        </Text>
-      )
-    },
-    {
       title: 'Actions',
       key: 'actions',
       width: 100,
@@ -601,7 +554,7 @@ const ReservationsTable = () => {
         }}
         bodyStyle={{ padding: '24px' }}
       >
-        <Row justify="space-between" align="middle" style={{ marginBottom: 24 }}>
+        <Row justify="space-between" align="middle" style={{ marginBottom: 16 }}>
           <Col>
             <Title level={3} style={{ color: 'rgb(241, 245, 249)', margin: 0 }}>
               Reservations
@@ -623,19 +576,6 @@ const ReservationsTable = () => {
                   {showFilters ? 'Hide Filters' : 'Filters'}
                 </Button>
               </Tooltip>
-              <Tooltip title="Sync from Habitat API">
-                <Button
-                  icon={<SyncOutlined />}
-                  onClick={handleSync}
-                  loading={syncing}
-                  style={{
-                    background: '#f59e0b',
-                    borderColor: '#f59e0b',
-                    color: 'rgb(241, 245, 249)',
-                    height: 40
-                  }}
-                />
-              </Tooltip>
               <Tooltip title="Refresh">
                 <Button
                   icon={<ReloadOutlined />}
@@ -652,6 +592,35 @@ const ReservationsTable = () => {
               </Tooltip>
             </Space>
           </Col>
+        </Row>
+        {/* Stats - Total Reservations & Total Released */}
+        <Row align="middle" style={{ marginBottom: 16, gap: 16, flexWrap: 'wrap' }}>
+          <Space size="middle" wrap>
+            <span
+              style={{
+                background: 'rgba(22, 163, 74, 0.2)',
+                color: '#4ade80',
+                padding: '4px 12px',
+                borderRadius: 8,
+                fontWeight: 600,
+                fontSize: 14,
+              }}
+            >
+              Total Reservations: {stats.total}
+            </span>
+            <span
+              style={{
+                background: 'rgba(148, 163, 184, 0.2)',
+                color: '#94a3b8',
+                padding: '4px 12px',
+                borderRadius: 8,
+                fontWeight: 600,
+                fontSize: 14,
+              }}
+            >
+              Total Released: {stats.released}
+            </span>
+          </Space>
         </Row>
 
         {/* Filters */}
