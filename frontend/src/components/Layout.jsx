@@ -15,6 +15,7 @@ import {
   ThunderboltOutlined,
   TrophyOutlined,
   FileTextOutlined,
+  MessageOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -66,6 +67,11 @@ const Layout = () => {
       key: '/statistics',
       icon: <BarChartOutlined />,
       label: 'Statistics',
+    },
+    {
+      key: '/feedback',
+      icon: <MessageOutlined />,
+      label: 'Feedback',
     },
     {
       key: '/docs',

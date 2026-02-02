@@ -14,6 +14,7 @@ const ReservationAuditLog = require('./ReservationAuditLog');
 const CommitFavorite = require('./CommitFavorite');
 const CommitFileStatsCache = require('./CommitFileStatsCache');
 const SuccessfulTask = require('./SuccessfulTask');
+const Feedback = require('./Feedback');
 
 // Define associations
 User.hasMany(UserHabitatAccount, { foreignKey: 'user_id', as: 'habitatAccounts' });
@@ -33,6 +34,12 @@ SuccessfulTask.belongsTo(User, { foreignKey: 'user_id', as: 'submitter' });
 
 User.hasMany(SuccessfulTask, { foreignKey: 'approved_by', as: 'approvedTasks' });
 SuccessfulTask.belongsTo(User, { foreignKey: 'approved_by', as: 'approver' });
+
+User.hasMany(Feedback, { foreignKey: 'user_id', as: 'feedbacks' });
+Feedback.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
+
+User.hasMany(Feedback, { foreignKey: 'resolved_by', as: 'resolvedFeedbacks' });
+Feedback.belongsTo(User, { foreignKey: 'resolved_by', as: 'resolver' });
 
 GitRepo.hasMany(Commit, { foreignKey: 'repo_id', as: 'commits' });
 Commit.belongsTo(GitRepo, { foreignKey: 'repo_id', as: 'repo' });
@@ -100,5 +107,6 @@ module.exports = {
   ReservationAuditLog,
   CommitFavorite,
   CommitFileStatsCache,
-  SuccessfulTask
+  SuccessfulTask,
+  Feedback
 };

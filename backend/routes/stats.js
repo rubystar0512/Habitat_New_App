@@ -1,6 +1,6 @@
 const express = require('express');
 const { Sequelize, Op } = require('sequelize');
-const { Commit, GitRepo, Reservation, User, SuccessfulTask, UserHabitatAccount, MemoCommit } = require('../models');
+const { Commit, GitRepo, Reservation, User, SuccessfulTask, UserHabitatAccount, MemoCommit, CommitStatusCache } = require('../models');
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
 
 const router = express.Router();
@@ -258,6 +258,12 @@ router.get('/team-stats', async (req, res, next) => {
           as: 'submittedTasks',
           attributes: ['id', 'payoutAmount', 'aiSuccessRate'],
           required: false
+        },
+        {
+          model: UserHabitatAccount,
+          as: 'habitatAccounts',
+          attributes: ['id', 'isActive'],
+          required: false
         }
       ]
     });
@@ -265,6 +271,7 @@ router.get('/team-stats', async (req, res, next) => {
     const data = users.map(user => {
       const reservations = user.reservations || [];
       const tasks = user.submittedTasks || [];
+      const accounts = user.habitatAccounts || [];
       const activeReservations = reservations.filter(r => r.status === 'reserved').length;
       const totalPayout = tasks.reduce((sum, t) => sum + (parseFloat(t.payoutAmount) || 0), 0);
       const avgAiSuccess = tasks.length > 0
@@ -277,7 +284,9 @@ router.get('/team-stats', async (req, res, next) => {
         activeReservations,
         successfulTasks: tasks.length,
         totalPayout,
-        avgAiSuccessRate: avgAiSuccess
+        avgAiSuccessRate: avgAiSuccess,
+        accountCount: accounts.length,
+        activeAccountCount: accounts.filter(a => a.isActive).length
       };
     });
 
@@ -505,6 +514,138 @@ router.get('/earnings-by-repo', async (req, res, next) => {
     const total = data.reduce((sum, item) => sum + item.value, 0);
 
     res.json({ data, total });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Account count per team member (admin only)
+router.get('/team-accounts', requireAdmin, async (req, res, next) => {
+  try {
+    const users = await User.findAll({
+      attributes: ['id', 'username'],
+      include: [
+        {
+          model: UserHabitatAccount,
+          as: 'habitatAccounts',
+          attributes: ['id', 'isActive'],
+          required: false
+        }
+      ]
+    });
+
+    const data = users.map(user => {
+      const accounts = user.habitatAccounts || [];
+      return {
+        username: user.username,
+        totalAccounts: accounts.length,
+        activeAccounts: accounts.filter(a => a.isActive).length,
+        inactiveAccounts: accounts.filter(a => !a.isActive).length
+      };
+    }).filter(u => u.totalAccounts > 0); // Only show users with accounts
+
+    res.json({ data });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Paid out commits scores histogram (admin only)
+router.get('/paid-out-scores', requireAdmin, async (req, res, next) => {
+  try {
+    // Get all commits that have paid_out status in cache
+    const paidOutStatuses = await CommitStatusCache.findAll({
+      where: {
+        status: 'paid_out'
+      },
+      attributes: ['commitId']
+    });
+
+    // Get unique commit IDs
+    const commitIds = [...new Set(paidOutStatuses.map(s => s.commitId))];
+
+    if (commitIds.length === 0) {
+      return res.json({
+        habitateScore: [],
+        suitabilityScore: [],
+        difficultyScore: [],
+        total: 0
+      });
+    }
+
+    // Get commits with their scores
+    const commits = await Commit.findAll({
+      where: {
+        id: { [Op.in]: commitIds }
+      },
+      attributes: ['habitateScore', 'suitabilityScore', 'difficultyScore']
+    });
+
+    // Create histogram bins
+    const createHistogram = (values, min, max, binCount = 20) => {
+      const bins = Array(binCount).fill(0);
+      const binSize = (max - min) / binCount;
+      
+      values.forEach(value => {
+        if (value !== null && value !== undefined) {
+          const binIndex = Math.min(
+            Math.floor((value - min) / binSize),
+            binCount - 1
+          );
+          if (binIndex >= 0) {
+            bins[binIndex]++;
+          }
+        }
+      });
+
+      return bins.map((count, index) => ({
+        bin: min + (index * binSize) + (binSize / 2), // Center of bin
+        count
+      }));
+    };
+
+    // Extract scores
+    const habitateScores = commits
+      .map(c => parseFloat(c.habitateScore))
+      .filter(s => !isNaN(s));
+    const suitabilityScores = commits
+      .map(c => parseFloat(c.suitabilityScore))
+      .filter(s => !isNaN(s));
+    const difficultyScores = commits
+      .map(c => parseFloat(c.difficultyScore))
+      .filter(s => !isNaN(s));
+
+    // Calculate ranges
+    const habitateMin = habitateScores.length > 0 ? Math.min(...habitateScores) : 0;
+    const habitateMax = habitateScores.length > 0 ? Math.max(...habitateScores) : 100;
+    const suitabilityMin = suitabilityScores.length > 0 ? Math.min(...suitabilityScores) : 0;
+    const suitabilityMax = suitabilityScores.length > 0 ? Math.max(...suitabilityScores) : 100;
+    const difficultyMin = difficultyScores.length > 0 ? Math.min(...difficultyScores) : 0;
+    const difficultyMax = difficultyScores.length > 0 ? Math.max(...difficultyScores) : 100;
+
+    res.json({
+      habitateScore: createHistogram(habitateScores, habitateMin, habitateMax),
+      suitabilityScore: createHistogram(suitabilityScores, suitabilityMin, suitabilityMax),
+      difficultyScore: createHistogram(difficultyScores, difficultyMin, difficultyMax),
+      total: commits.length,
+      stats: {
+        habitate: {
+          min: habitateMin,
+          max: habitateMax,
+          avg: habitateScores.length > 0 ? habitateScores.reduce((a, b) => a + b, 0) / habitateScores.length : 0
+        },
+        suitability: {
+          min: suitabilityMin,
+          max: suitabilityMax,
+          avg: suitabilityScores.length > 0 ? suitabilityScores.reduce((a, b) => a + b, 0) / suitabilityScores.length : 0
+        },
+        difficulty: {
+          min: difficultyMin,
+          max: difficultyMax,
+          avg: difficultyScores.length > 0 ? difficultyScores.reduce((a, b) => a + b, 0) / difficultyScores.length : 0
+        }
+      }
+    });
   } catch (error) {
     next(error);
   }

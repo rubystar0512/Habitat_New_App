@@ -11,6 +11,7 @@ const accountRoutes = require('./accounts');
 const memoRoutes = require('./memo');
 const successfulTaskRoutes = require('./successfulTasks');
 const statsRoutes = require('./stats');
+const feedbackRoutes = require('./feedback');
 
 // Mount routes
 router.use('/auth', authRoutes);
@@ -22,5 +23,6 @@ router.use('/accounts', accountRoutes);
 router.use('/memo', memoRoutes);
 router.use('/successful-tasks', successfulTaskRoutes);
 router.use('/stats', statsRoutes);
+router.use('/feedback', feedbackRoutes);
 
 module.exports = router;

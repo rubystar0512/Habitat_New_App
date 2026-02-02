@@ -23,6 +23,8 @@ const Statistics = () => {
   const [scoreDistributionByRepo, setScoreDistributionByRepo] = useState([]);
   const [earningsTimeline, setEarningsTimeline] = useState([]);
   const [earningsByRepo, setEarningsByRepo] = useState({ data: [], total: 0 });
+  const [teamAccounts, setTeamAccounts] = useState([]);
+  const [paidOutScores, setPaidOutScores] = useState(null);
 
   useEffect(() => {
     fetchAllData();
@@ -31,7 +33,7 @@ const Statistics = () => {
   const fetchAllData = async () => {
     setLoading(true);
     try {
-      const [repoCommits, repoScores, teamStats, scoreDist, scoreDistByRepo, earningsTime, earningsRepo] = await Promise.all([
+      const promises = [
         api.get('/stats/repo-commits'),
         api.get('/stats/repo-scores'),
         isAdmin() ? api.get('/stats/team-stats') : Promise.resolve({ data: { data: [] } }),
@@ -39,7 +41,20 @@ const Statistics = () => {
         api.get('/stats/score-distribution-by-repo'),
         api.get(`/stats/earnings-timeline?days=${timeRange}`),
         api.get(`/stats/earnings-by-repo?days=${timeRange}`)
-      ]);
+      ];
+
+      if (isAdmin()) {
+        promises.push(api.get('/stats/team-accounts'));
+        promises.push(api.get('/stats/paid-out-scores'));
+      } else {
+        promises.push(Promise.resolve({ data: { data: [] } }));
+        promises.push(Promise.resolve({ data: null }));
+      }
+
+      const [
+        repoCommits, repoScores, teamStats, scoreDist, scoreDistByRepo,
+        earningsTime, earningsRepo, teamAccountsData, paidOutScoresData
+      ] = await Promise.all(promises);
 
       setRepoCommitsData(repoCommits.data.data || []);
       setRepoScoresData(repoScores.data.data || []);
@@ -48,6 +63,10 @@ const Statistics = () => {
       setScoreDistributionByRepo(scoreDistByRepo.data.data || []);
       setEarningsTimeline(earningsTime.data.data || []);
       setEarningsByRepo(earningsRepo.data);
+      if (isAdmin()) {
+        setTeamAccounts(teamAccountsData.data.data || []);
+        setPaidOutScores(paidOutScoresData.data);
+      }
     } catch (error) {
       console.error('Failed to fetch statistics:', error);
     } finally {
@@ -536,6 +555,234 @@ const Statistics = () => {
     backgroundColor: 'transparent'
   };
 
+  // Team Accounts Chart
+  const teamAccountsOption = teamAccounts.length > 0 ? {
+    title: {
+      text: 'Habitat Account Count per Team Member',
+      left: 'center',
+      textStyle: { color: 'rgb(241, 245, 249)' }
+    },
+    tooltip: {
+      trigger: 'axis',
+      axisPointer: { type: 'shadow' },
+      formatter: (params) => {
+        let result = `${params[0].axisValue}<br/>`;
+        params.forEach(param => {
+          result += `${param.seriesName}: ${param.value}<br/>`;
+        });
+        return result;
+      }
+    },
+    legend: {
+      data: ['Total Accounts', 'Active Accounts', 'Inactive Accounts'],
+      top: 30,
+      textStyle: { color: 'rgb(148, 163, 184)' }
+    },
+    grid: {
+      left: '3%',
+      right: '4%',
+      bottom: '3%',
+      containLabel: true
+    },
+    xAxis: {
+      type: 'category',
+      data: teamAccounts.map(t => t.username),
+      axisLabel: {
+        color: 'rgb(148, 163, 184)',
+        rotate: 45
+      }
+    },
+    yAxis: {
+      type: 'value',
+      name: 'Account Count',
+      nameTextStyle: { color: 'rgb(148, 163, 184)' },
+      axisLabel: { color: 'rgb(148, 163, 184)' },
+      splitLine: {
+        lineStyle: { color: '#334155' }
+      }
+    },
+    series: [
+      {
+        name: 'Total Accounts',
+        type: 'bar',
+        data: teamAccounts.map(t => t.totalAccounts),
+        itemStyle: { color: '#16a34a' }
+      },
+      {
+        name: 'Active Accounts',
+        type: 'bar',
+        data: teamAccounts.map(t => t.activeAccounts),
+        itemStyle: { color: '#3b82f6' }
+      },
+      {
+        name: 'Inactive Accounts',
+        type: 'bar',
+        data: teamAccounts.map(t => t.inactiveAccounts),
+        itemStyle: { color: '#64748b' }
+      }
+    ],
+    backgroundColor: 'transparent'
+  } : null;
+
+  // Paid Out Scores Histogram - Habitat Score
+  const paidOutHabitatScoreOption = paidOutScores && paidOutScores.habitateScore && paidOutScores.habitateScore.length > 0 ? {
+    title: {
+      text: 'Paid Out Commits - Habitat Score Distribution',
+      subtext: `Total: ${paidOutScores.total || 0} commits | Avg: ${paidOutScores.stats?.habitate?.avg?.toFixed(1) || 0}`,
+      left: 'center',
+      textStyle: { color: 'rgb(241, 245, 249)' },
+      subtextStyle: { color: 'rgb(148, 163, 184)' }
+    },
+    tooltip: {
+      trigger: 'axis',
+      formatter: (params) => {
+        const param = params[0];
+        return `Score: ${param.name}<br/>Count: ${param.value}`;
+      }
+    },
+    grid: {
+      left: '3%',
+      right: '4%',
+      bottom: '15%',
+      containLabel: true
+    },
+    xAxis: {
+      type: 'category',
+      name: 'Habitat Score Range',
+      nameTextStyle: { color: 'rgb(148, 163, 184)' },
+      data: paidOutScores.habitateScore.map(item => item.bin.toFixed(1)),
+      axisLabel: {
+        color: 'rgb(148, 163, 184)',
+        rotate: 45,
+        interval: Math.floor(paidOutScores.habitateScore.length / 10) || 1
+      }
+    },
+    yAxis: {
+      type: 'value',
+      name: 'Number of Commits',
+      nameTextStyle: { color: 'rgb(148, 163, 184)' },
+      axisLabel: { color: 'rgb(148, 163, 184)' },
+      splitLine: {
+        lineStyle: { color: '#334155' }
+      }
+    },
+    series: [
+      {
+        name: 'Commits',
+        type: 'bar',
+        data: paidOutScores.habitateScore.map(item => item.count),
+        itemStyle: { color: '#16a34a' }
+      }
+    ],
+    backgroundColor: 'transparent'
+  } : null;
+
+  // Paid Out Scores Histogram - Suitability Score
+  const paidOutSuitabilityScoreOption = paidOutScores && paidOutScores.suitabilityScore && paidOutScores.suitabilityScore.length > 0 ? {
+    title: {
+      text: 'Paid Out Commits - Suitability Score Distribution',
+      subtext: `Total: ${paidOutScores.total || 0} commits | Avg: ${paidOutScores.stats?.suitability?.avg?.toFixed(1) || 0}`,
+      left: 'center',
+      textStyle: { color: 'rgb(241, 245, 249)' },
+      subtextStyle: { color: 'rgb(148, 163, 184)' }
+    },
+    tooltip: {
+      trigger: 'axis',
+      formatter: (params) => {
+        const param = params[0];
+        return `Score: ${param.name}<br/>Count: ${param.value}`;
+      }
+    },
+    grid: {
+      left: '3%',
+      right: '4%',
+      bottom: '15%',
+      containLabel: true
+    },
+    xAxis: {
+      type: 'category',
+      name: 'Suitability Score Range',
+      nameTextStyle: { color: 'rgb(148, 163, 184)' },
+      data: paidOutScores.suitabilityScore.map(item => item.bin.toFixed(1)),
+      axisLabel: {
+        color: 'rgb(148, 163, 184)',
+        rotate: 45,
+        interval: Math.floor(paidOutScores.suitabilityScore.length / 10) || 1
+      }
+    },
+    yAxis: {
+      type: 'value',
+      name: 'Number of Commits',
+      nameTextStyle: { color: 'rgb(148, 163, 184)' },
+      axisLabel: { color: 'rgb(148, 163, 184)' },
+      splitLine: {
+        lineStyle: { color: '#334155' }
+      }
+    },
+    series: [
+      {
+        name: 'Commits',
+        type: 'bar',
+        data: paidOutScores.suitabilityScore.map(item => item.count),
+        itemStyle: { color: '#3b82f6' }
+      }
+    ],
+    backgroundColor: 'transparent'
+  } : null;
+
+  // Paid Out Scores Histogram - Difficulty Score
+  const paidOutDifficultyScoreOption = paidOutScores && paidOutScores.difficultyScore && paidOutScores.difficultyScore.length > 0 ? {
+    title: {
+      text: 'Paid Out Commits - Difficulty Score Distribution',
+      subtext: `Total: ${paidOutScores.total || 0} commits | Avg: ${paidOutScores.stats?.difficulty?.avg?.toFixed(1) || 0}`,
+      left: 'center',
+      textStyle: { color: 'rgb(241, 245, 249)' },
+      subtextStyle: { color: 'rgb(148, 163, 184)' }
+    },
+    tooltip: {
+      trigger: 'axis',
+      formatter: (params) => {
+        const param = params[0];
+        return `Score: ${param.name}<br/>Count: ${param.value}`;
+      }
+    },
+    grid: {
+      left: '3%',
+      right: '4%',
+      bottom: '15%',
+      containLabel: true
+    },
+    xAxis: {
+      type: 'category',
+      name: 'Difficulty Score Range',
+      nameTextStyle: { color: 'rgb(148, 163, 184)' },
+      data: paidOutScores.difficultyScore.map(item => item.bin.toFixed(1)),
+      axisLabel: {
+        color: 'rgb(148, 163, 184)',
+        rotate: 45,
+        interval: Math.floor(paidOutScores.difficultyScore.length / 10) || 1
+      }
+    },
+    yAxis: {
+      type: 'value',
+      name: 'Number of Commits',
+      nameTextStyle: { color: 'rgb(148, 163, 184)' },
+      axisLabel: { color: 'rgb(148, 163, 184)' },
+      splitLine: {
+        lineStyle: { color: '#334155' }
+      }
+    },
+    series: [
+      {
+        name: 'Commits',
+        type: 'bar',
+        data: paidOutScores.difficultyScore.map(item => item.count),
+        itemStyle: { color: '#f59e0b' }
+      }
+    ],
+    backgroundColor: 'transparent'
+  } : null;
+
   // Team Payout Chart
   const teamPayoutOption = {
     title: {
@@ -760,7 +1007,7 @@ const Statistics = () => {
 
       {/* Row 4: Team Stats (Admin only) */}
       {isAdmin() && teamStatsData.length > 0 && (
-        <Row gutter={[16, 16]}>
+        <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
           <Col xs={24} lg={12}>
             <Card
               style={{
@@ -791,6 +1038,77 @@ const Statistics = () => {
                 style={{ height: '400px', width: '100%' }}
                 opts={{ renderer: 'svg' }}
               />
+            </Card>
+          </Col>
+        </Row>
+      )}
+
+      {/* Row 5: Team Accounts (Admin only) */}
+      {isAdmin() && teamAccounts.length > 0 && teamAccountsOption && (
+        <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+          <Col xs={24}>
+            <Card
+              style={{
+                background: '#1e293b',
+                border: '1px solid #334155',
+                borderRadius: 12
+              }}
+              bodyStyle={{ padding: '20px' }}
+            >
+              <ReactECharts
+                option={teamAccountsOption}
+                style={{ height: '400px', width: '100%' }}
+                opts={{ renderer: 'svg' }}
+              />
+            </Card>
+          </Col>
+        </Row>
+      )}
+
+      {/* Row 6: Paid Out Commits Scores Histograms (Admin only) */}
+      {isAdmin() && paidOutScores && paidOutScores.total > 0 && (
+        <Row gutter={[16, 16]}>
+          <Col xs={24}>
+            <Card
+              style={{
+                background: '#1e293b',
+                border: '1px solid #334155',
+                borderRadius: 12
+              }}
+              bodyStyle={{ padding: '20px' }}
+            >
+              <Title level={4} style={{ color: 'rgb(241, 245, 249)', marginBottom: 24, textAlign: 'center' }}>
+                Paid Out Commits Score Analysis
+              </Title>
+              <Row gutter={[16, 16]}>
+                {paidOutHabitatScoreOption && (
+                  <Col xs={24} lg={8}>
+                    <ReactECharts
+                      option={paidOutHabitatScoreOption}
+                      style={{ height: '350px', width: '100%' }}
+                      opts={{ renderer: 'svg' }}
+                    />
+                  </Col>
+                )}
+                {paidOutSuitabilityScoreOption && (
+                  <Col xs={24} lg={8}>
+                    <ReactECharts
+                      option={paidOutSuitabilityScoreOption}
+                      style={{ height: '350px', width: '100%' }}
+                      opts={{ renderer: 'svg' }}
+                    />
+                  </Col>
+                )}
+                {paidOutDifficultyScoreOption && (
+                  <Col xs={24} lg={8}>
+                    <ReactECharts
+                      option={paidOutDifficultyScoreOption}
+                      style={{ height: '350px', width: '100%' }}
+                      opts={{ renderer: 'svg' }}
+                    />
+                  </Col>
+                )}
+              </Row>
             </Card>
           </Col>
         </Row>
