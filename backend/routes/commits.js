@@ -1,7 +1,7 @@
 const express = require('express');
 const { Op, col } = require('sequelize');
 const { Commit, GitRepo, CommitFile, CommitFileStatsCache, Reservation, MemoCommit, CommitStatusCache, UserHabitatAccount, User } = require('../models');
-const { authenticateToken } = require('../middleware/auth');
+const { authenticateToken, requireAdmin } = require('../middleware/auth');
 const { commitFilterRules, paginationRules, handleValidationErrors, idParamRule } = require('../middleware/validation');
 const { claim, deleteReservation } = require('../services/habitatApi');
 const { sequelize } = require('../config/database');
@@ -363,6 +363,129 @@ router.get('/', commitFilterRules, paginationRules, handleValidationErrors, asyn
       limit,
       offset
     });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/commit-chain', requireAdmin, async (req, res, next) => {
+  try {
+    const baseCommit = (req.query.base_commit || '').trim();
+    const repoId = req.query.repo_id ? parseInt(req.query.repo_id, 10) : null;
+    const maxDepth = Math.min(Math.max(parseInt(req.query.max_depth, 10) || 10, 1), 50);
+
+    if (!baseCommit || baseCommit.length < 7) {
+      return res.status(400).json({ error: 'base_commit is required (min 7 characters)' });
+    }
+
+    const repoWhere = repoId && !Number.isNaN(repoId) ? { repoId } : {};
+
+    // Fetch chain iteratively: start from base_commit (LIKE for first level), then exact match for chained merged hashes
+    const allCommits = [];
+    const baseTrim = baseCommit.trim();
+    let baseHashes = [baseTrim];
+    const useLike = baseTrim.length < 40; // partial hash: use LIKE for first level
+    const seenBases = new Set();
+
+    for (let d = 0; d < maxDepth && baseHashes.length > 0; d++) {
+      const whereClause = repoId && !Number.isNaN(repoId) ? { ...repoWhere } : {};
+      if (d === 0 && useLike) {
+        whereClause.baseCommit = { [Op.like]: `${baseTrim}%` };
+      } else {
+        whereClause.baseCommit = { [Op.in]: baseHashes };
+      }
+      const next = await Commit.findAll({
+        where: whereClause,
+        attributes: ['id', 'repoId', 'baseCommit', 'mergedCommit', 'habitateScore', 'message'],
+        include: [
+          { model: GitRepo, as: 'repo', attributes: ['id', 'repoName', 'fullName'] }
+        ]
+      });
+      allCommits.push(...next);
+      baseHashes = [...new Set(next.map(c => (c.mergedCommit || '').trim()).filter(Boolean))].filter(h => !seenBases.has(h));
+      baseHashes.forEach(h => seenBases.add(h));
+    }
+
+    const commitByBase = new Map();
+    allCommits.forEach(c => {
+      const key = (c.baseCommit || '').trim();
+      if (!commitByBase.has(key)) commitByBase.set(key, []);
+      commitByBase.get(key).push(c);
+    });
+    // When user sent partial hash, point root at all commits whose base starts with it
+    if (useLike) {
+      const firstLevel = allCommits.filter(c => (c.baseCommit || '').trim().startsWith(baseTrim));
+      if (firstLevel.length > 0) {
+        commitByBase.set(baseTrim, firstLevel);
+      }
+    }
+
+    const statusByCommitId = new Map();
+    const commitIds = [...new Set(allCommits.map(c => c.id))];
+    if (commitIds.length > 0) {
+      const statuses = await CommitStatusCache.findAll({
+        where: { commitId: { [Op.in]: commitIds } },
+        attributes: ['commitId', 'status']
+      });
+      statuses.forEach(s => statusByCommitId.set(s.commitId, s.status));
+    }
+
+    const visited = new Set();
+
+    function buildNode(baseHash, depth) {
+      if (depth > maxDepth) return null;
+      const key = (baseHash || '').trim();
+      if (visited.has(key)) return null;
+      const childrenCommits = commitByBase.get(key) || [];
+      visited.add(key);
+
+      const children = [];
+      for (const commit of childrenCommits) {
+        const merged = (commit.mergedCommit || '').trim();
+        const childNode = buildNode(merged, depth + 1);
+        const status = statusByCommitId.get(commit.id);
+        const shortMerged = (commit.mergedCommit || '').substring(0, 8);
+        const label = `${shortMerged} (id:${commit.id}${status ? ` ${status}` : ''})`;
+        children.push({
+          name: label,
+          value: commit.id,
+          commitId: commit.id,
+          baseCommit: commit.baseCommit,
+          mergedCommit: commit.mergedCommit,
+          habitateScore: commit.habitateScore,
+          status: status || null,
+          repoName: commit.repo?.fullName || commit.repo?.repoName,
+          children: (childNode && childNode.children && childNode.children.length > 0) ? childNode.children : []
+        });
+      }
+
+      const rootLabel = (baseCommit || '').substring(0, 8) + (baseCommit.length > 8 ? '...' : '');
+      if (depth === 0) {
+        return {
+          name: children.length === 0 ? `${rootLabel} (no merge commits found)` : `${rootLabel} (root)`,
+          children
+        };
+      }
+      return {
+        name: key.substring(0, 8),
+        children
+      };
+    }
+
+    const rootLabel = (baseTrim || '').substring(0, 8) + (baseTrim.length > 8 ? '...' : '');
+    const tree = buildNode(baseTrim, 0);
+
+    if (!tree) {
+      return res.json({
+        tree: { name: `${rootLabel} (no merge commits found)`, children: [] },
+        totalNodes: 0
+      });
+    }
+
+    const countNodes = (n) => 1 + (n.children || []).reduce((sum, c) => sum + countNodes(c), 0);
+    const totalNodes = countNodes(tree);
+
+    res.json({ tree, totalNodes });
   } catch (error) {
     next(error);
   }

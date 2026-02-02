@@ -35,6 +35,7 @@ import {
   ClockCircleOutlined,
   SettingOutlined,
 } from '@ant-design/icons';
+import ReactECharts from 'echarts-for-react';
 import api from '../../config/api';
 import { useAuth } from '../../contexts/AuthContext';
 import dayjs from 'dayjs';
@@ -69,6 +70,12 @@ const CommitsTable = () => {
   const [actionLoading, setActionLoading] = useState({});
   const [columnCustomizeVisible, setColumnCustomizeVisible] = useState(false);
   const [myStats, setMyStats] = useState(null); // { reservations: { total, active }, memoCommits: { total } }
+  // Commit chain (admin): base commit -> merge commits tree
+  const [chainBaseCommit, setChainBaseCommit] = useState('');
+  const [chainRepoId, setChainRepoId] = useState(undefined);
+  const [chainLoading, setChainLoading] = useState(false);
+  const [chainTree, setChainTree] = useState(null);
+  const [chainTotalNodes, setChainTotalNodes] = useState(0);
   
   // Column visibility state - load from localStorage or use defaults
   const [visibleColumns, setVisibleColumns] = useState(() => {
@@ -230,6 +237,31 @@ const CommitsTable = () => {
       message.error('Failed to fetch commits');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchCommitChain = async () => {
+    const base = (chainBaseCommit || '').trim();
+    if (!base || base.length < 7) {
+      message.warning('Enter a base commit (min 7 characters)');
+      return;
+    }
+    setChainLoading(true);
+    try {
+      const params = { base_commit: base };
+      if (chainRepoId) params.repo_id = chainRepoId;
+      const res = await api.get('/commits/commit-chain', { params });
+      setChainTree(res.data.tree || null);
+      setChainTotalNodes(res.data.totalNodes || 0);
+      if (!res.data.tree?.children?.length) {
+        message.info('No merge commits found for this base commit');
+      }
+    } catch (err) {
+      message.error(err.response?.data?.error || 'Failed to load commit chain');
+      setChainTree(null);
+      setChainTotalNodes(0);
+    } finally {
+      setChainLoading(false);
     }
   };
 
@@ -1101,6 +1133,7 @@ const CommitsTable = () => {
               background: '#1e293b',
               border: '1px solid #334155',
               height: 'calc(88vh)',
+              overflowY: 'auto',
             }}
           >
             <Row justify="space-between" align="middle" style={{ marginBottom: 8 }}>
@@ -1150,6 +1183,116 @@ const CommitsTable = () => {
               </Space>
             </Row>
 
+            {/* Admin: Commit Chain tree (base -> merge commits, for paid_out chain) */}
+            {isAdmin() && (
+              <Collapse style={{ marginBottom: 16, background: '#1e293b', border: '1px solid #334155' }}>
+                <Panel
+                  header={
+                    <Space>
+                      <Text strong style={{ color: 'rgb(241, 245, 249)' }}>Commit Chain (Admin)</Text>
+                      <Text type="secondary" style={{ fontSize: 12 }}>Base commit → merge commits tree (paid_out chain)</Text>
+                    </Space>
+                  }
+                  key="commit-chain"
+                >
+                  <Row gutter={[16, 16]} align="middle">
+                    <Col>
+                      <Input
+                        placeholder="Base commit hash (min 7 chars)"
+                        value={chainBaseCommit}
+                        onChange={(e) => setChainBaseCommit(e.target.value)}
+                        style={{ width: 280 }}
+                        allowClear
+                      />
+                    </Col>
+                    <Col>
+                      <Select
+                        placeholder="Repo (optional)"
+                        allowClear
+                        value={chainRepoId}
+                        onChange={setChainRepoId}
+                        style={{ width: 220 }}
+                      >
+                        {repos.map((r) => (
+                          <Option key={r.id} value={r.id}>{r.fullName || r.repoName}</Option>
+                        ))}
+                      </Select>
+                    </Col>
+                    <Col>
+                      <Button type="primary" loading={chainLoading} onClick={fetchCommitChain}>
+                        Load chain
+                      </Button>
+                    </Col>
+                    {chainTotalNodes > 0 && (
+                      <Col>
+                        <Text style={{ color: 'rgb(148, 163, 184)' }}>{chainTotalNodes} node(s)</Text>
+                      </Col>
+                    )}
+                  </Row>
+                  {chainTree && (
+                    <div style={{ marginTop: 16, minHeight: 400 }}>
+                      <ReactECharts
+                        option={{
+                          tooltip: {
+                            trigger: 'item',
+                            formatter: (params) => {
+                              const d = params.data;
+                              if (!d) return params.name;
+                              let s = `<strong>${params.name}</strong>`;
+                              if (d.baseCommit) s += `<br/>Base: ${d.baseCommit.substring(0, 12)}...`;
+                              if (d.mergedCommit) s += `<br/>Merged: ${d.mergedCommit.substring(0, 12)}...`;
+                              if (d.status) s += `<br/>Status: ${d.status}`;
+                              if (d.habitateScore != null) s += `<br/>Habitat: ${d.habitateScore}`;
+                              if (d.repoName) s += `<br/>Repo: ${d.repoName}`;
+                              return s;
+                            }
+                          },
+                          series: [
+                            {
+                              type: 'tree',
+                              data: [chainTree],
+                              left: '2%',
+                              right: '2%',
+                              top: '8%',
+                              bottom: '8%',
+                              orient: 'TB',
+                              symbol: 'roundRect',
+                              symbolSize: 10,
+                              edgeShape: 'polyline',
+                              edgeForkPosition: '50%',
+                              initialTreeDepth: -1,
+                              lineStyle: { color: '#334155', width: 1.5 },
+                              itemStyle: {
+                                color: '#16a34a',
+                                borderColor: '#334155',
+                                borderWidth: 1
+                              },
+                              label: {
+                                position: 'left',
+                                verticalAlign: 'middle',
+                                align: 'right',
+                                color: 'rgb(241, 245, 249)',
+                                fontSize: 12
+                              },
+                              leaves: {
+                                label: { position: 'left', verticalAlign: 'middle', align: 'right' }
+                              },
+                              expandAndCollapse: true,
+                              animationDuration: 550,
+                              animationDurationUpdate: 750
+                            }
+                          ],
+                          backgroundColor: 'transparent'
+                        }}
+                        style={{ height: 450, width: '100%' }}
+                        opts={{ renderer: 'svg' }}
+                      />
+                    </div>
+                  )}
+                </Panel>
+              </Collapse>
+            )}
+
         <Table
           columns={columns}
           dataSource={commits}
@@ -1165,7 +1308,7 @@ const CommitsTable = () => {
           onChange={handleTableChange}
           scroll={{ 
             x: 'max-content',
-            y: 'calc(62vh)'
+            y: 'calc(51vh)'
           }}
           sticky={{
             offsetHeader: 0
