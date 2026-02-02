@@ -1,6 +1,6 @@
 const express = require('express');
 const { Op, col } = require('sequelize');
-const { Commit, GitRepo, CommitFile, CommitFileStatsCache, Reservation, MemoCommit, CommitStatusCache, UserHabitatAccount } = require('../models');
+const { Commit, GitRepo, CommitFile, CommitFileStatsCache, Reservation, MemoCommit, CommitStatusCache, UserHabitatAccount, User } = require('../models');
 const { authenticateToken } = require('../middleware/auth');
 const { commitFilterRules, paginationRules, handleValidationErrors, idParamRule } = require('../middleware/validation');
 const { claim, deleteReservation } = require('../services/habitatApi');
@@ -281,6 +281,29 @@ router.get('/', commitFilterRules, paginationRules, handleValidationErrors, asyn
     });
     const memoCommitIds = new Set(memoCommits.map(m => m.commitId));
 
+    // Get memo commits by other users (to show who has memoed each commit)
+    const otherUserMemos = await MemoCommit.findAll({
+      where: {
+        commitId: { [Op.in]: commitIds },
+        userId: { [Op.ne]: req.userId }
+      },
+      include: [{
+        model: User,
+        as: 'user',
+        attributes: ['id', 'username', 'email']
+      }],
+      attributes: ['commitId', 'userId']
+    });
+    const memoedByMap = {};
+    otherUserMemos.forEach(memo => {
+      if (!memoedByMap[memo.commitId]) {
+        memoedByMap[memo.commitId] = {
+          userId: memo.userId,
+          username: memo.user?.username || null
+        };
+      }
+    });
+
     // Get status cache for user's accounts
     const statusCache = await CommitStatusCache.findAll({
       where: {
@@ -318,6 +341,7 @@ router.get('/', commitFilterRules, paginationRules, handleValidationErrors, asyn
     const commitsWithStatus = commits.map(commit => {
       const commitData = commit.toJSON();
       commitData.isInMemo = memoCommitIds.has(commit.id);
+      commitData.memoedBy = memoedByMap[commit.id] || null; // Info about who else has memoed this commit
       commitData.userReservation = reservationMap[commit.id] || null;
       commitData.statusInfo = statusMap[commit.id] || null;
       
@@ -420,14 +444,39 @@ router.post('/:id/unmark-unsuitable', idParamRule, handleValidationErrors, async
 router.post('/:id/memo', idParamRule, handleValidationErrors, async (req, res, next) => {
   try {
     const { notes, priority } = req.body;
+    const commitId = parseInt(req.params.id);
+
+    // Check if commit is already memoed by another user
+    const existingMemo = await MemoCommit.findOne({
+      where: {
+        commitId: commitId,
+        userId: { [Op.ne]: req.userId }
+      },
+      include: [{
+        model: User,
+        as: 'user',
+        attributes: ['id', 'username', 'email']
+      }]
+    });
+
+    if (existingMemo) {
+      return res.status(409).json({ 
+        error: `This commit is already in ${existingMemo.user?.username || 'another team member'}'s memo`,
+        memoedBy: {
+          userId: existingMemo.userId,
+          username: existingMemo.user?.username || null
+        }
+      });
+    }
+
     const [memoCommit, created] = await MemoCommit.findOrCreate({
       where: {
         userId: req.userId,
-        commitId: req.params.id
+        commitId: commitId
       },
       defaults: {
         userId: req.userId,
-        commitId: req.params.id,
+        commitId: commitId,
         notes: notes || null,
         priority: priority || 0
       }

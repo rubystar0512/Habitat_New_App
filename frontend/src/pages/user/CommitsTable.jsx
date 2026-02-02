@@ -332,7 +332,13 @@ const CommitsTable = () => {
     return textMap[status] || status;
   };
 
-  const handleMemo = async (commitId, isInMemo) => {
+  const handleMemo = async (commitId, isInMemo, memoedBy) => {
+    // Prevent memoing if already memoed by another user
+    if (!isInMemo && memoedBy) {
+      message.warning(`This commit is already in ${memoedBy.username || 'another team member'}'s memo`);
+      return;
+    }
+
     setActionLoading({ ...actionLoading, [`memo-${commitId}`]: true });
     try {
       if (isInMemo) {
@@ -343,8 +349,15 @@ const CommitsTable = () => {
         message.success('Added to memo');
       }
       fetchCommits();
+      fetchMyStats();
     } catch (error) {
-      message.error(error.response?.data?.error || 'Failed to update memo');
+      const errorMsg = error.response?.data?.error || 'Failed to update memo';
+      if (error.response?.status === 409) {
+        // Conflict - already memoed by another user
+        message.warning(errorMsg);
+      } else {
+        message.error(errorMsg);
+      }
     } finally {
       setActionLoading({ ...actionLoading, [`memo-${commitId}`]: false });
     }
@@ -702,23 +715,36 @@ const CommitsTable = () => {
         render: (_, record) => {
           const isReserved = record.userReservation && record.userReservation.status === 'reserved';
           const isInMemo = record.isInMemo;
+          const memoedBy = record.memoedBy; // Info about who else has memoed this commit
           const isUnsuitable = record.isUnsuitable;
+          const canMemo = !memoedBy || isInMemo; // Can only memo if not memoed by another user or already in own memo
+          
+          const memoTooltip = isInMemo 
+            ? 'Remove from memo' 
+            : memoedBy 
+              ? `Already in ${memoedBy.username || 'another team member'}'s memo`
+              : 'Add to memo';
           
           return (
             <Space size="small">
-              <Tooltip title={isInMemo ? 'Remove from memo' : 'Add to memo'}>
+              <Tooltip title={memoTooltip}>
                 <Button
                   type="text"
                   size="small"
                   icon={<BookOutlined />}
-                  onClick={() => handleMemo(record.id, isInMemo)}
+                  onClick={() => handleMemo(record.id, isInMemo, memoedBy)}
                   loading={actionLoading[`memo-${record.id}`]}
+                  disabled={!canMemo && !isInMemo}
                   style={{
-                    color: isInMemo ? '#faad14' : '#8c8c8c',
+                    color: isInMemo ? '#faad14' : memoedBy ? '#ff4d4f' : '#8c8c8c',
                     padding: '4px 8px',
+                    opacity: (!canMemo && !isInMemo) ? 0.5 : 1,
+                    cursor: (!canMemo && !isInMemo) ? 'not-allowed' : 'pointer',
                   }}
                   onMouseEnter={(e) => {
-                    e.currentTarget.style.background = 'rgba(250, 173, 20, 0.1)';
+                    if (canMemo || isInMemo) {
+                      e.currentTarget.style.background = 'rgba(250, 173, 20, 0.1)';
+                    }
                   }}
                   onMouseLeave={(e) => {
                     e.currentTarget.style.background = 'transparent';
