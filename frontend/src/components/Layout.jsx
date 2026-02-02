@@ -16,6 +16,7 @@ import {
   TrophyOutlined,
   FileTextOutlined,
   MessageOutlined,
+  ToolOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -56,6 +57,14 @@ const Layout = () => {
         { key: '/memo', icon: <BookOutlined />, label: 'Memo' },
         { key: '/reservations', icon: <CheckCircleOutlined />, label: 'Reservations' },
         { key: '/reservation-cron', icon: <ThunderboltOutlined />, label: 'Auto Reservation' },
+      ],
+    },
+    {
+      key: 'util',
+      icon: <ToolOutlined />,
+      label: 'Util',
+      children: [
+        { key: '/xml-viewer', icon: <FileTextOutlined />, label: 'XML Viewer' },
       ],
     },
     {
