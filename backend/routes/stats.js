@@ -615,13 +615,108 @@ router.get('/paid-out-scores', requireAdmin, async (req, res, next) => {
       .map(c => parseFloat(c.difficultyScore))
       .filter(s => !isNaN(s));
 
-    // Calculate ranges
-    const habitateMin = habitateScores.length > 0 ? Math.min(...habitateScores) : 0;
-    const habitateMax = habitateScores.length > 0 ? Math.max(...habitateScores) : 100;
-    const suitabilityMin = suitabilityScores.length > 0 ? Math.min(...suitabilityScores) : 0;
-    const suitabilityMax = suitabilityScores.length > 0 ? Math.max(...suitabilityScores) : 100;
-    const difficultyMin = difficultyScores.length > 0 ? Math.min(...difficultyScores) : 0;
-    const difficultyMax = difficultyScores.length > 0 ? Math.max(...difficultyScores) : 100;
+    // Calculate ranges - use reduce instead of spread operator to avoid stack overflow
+    const habitateMin = habitateScores.length > 0 ? habitateScores.reduce((a, b) => Math.min(a, b)) : 0;
+    const habitateMax = habitateScores.length > 0 ? habitateScores.reduce((a, b) => Math.max(a, b)) : 100;
+    const suitabilityMin = suitabilityScores.length > 0 ? suitabilityScores.reduce((a, b) => Math.min(a, b)) : 0;
+    const suitabilityMax = suitabilityScores.length > 0 ? suitabilityScores.reduce((a, b) => Math.max(a, b)) : 100;
+    const difficultyMin = difficultyScores.length > 0 ? difficultyScores.reduce((a, b) => Math.min(a, b)) : 0;
+    const difficultyMax = difficultyScores.length > 0 ? difficultyScores.reduce((a, b) => Math.max(a, b)) : 100;
+
+    res.json({
+      habitateScore: createHistogram(habitateScores, habitateMin, habitateMax),
+      suitabilityScore: createHistogram(suitabilityScores, suitabilityMin, suitabilityMax),
+      difficultyScore: createHistogram(difficultyScores, difficultyMin, difficultyMax),
+      total: commits.length,
+      stats: {
+        habitate: {
+          min: habitateMin,
+          max: habitateMax,
+          avg: habitateScores.length > 0 ? habitateScores.reduce((a, b) => a + b, 0) / habitateScores.length : 0
+        },
+        suitability: {
+          min: suitabilityMin,
+          max: suitabilityMax,
+          avg: suitabilityScores.length > 0 ? suitabilityScores.reduce((a, b) => a + b, 0) / suitabilityScores.length : 0
+        },
+        difficulty: {
+          min: difficultyMin,
+          max: difficultyMax,
+          avg: difficultyScores.length > 0 ? difficultyScores.reduce((a, b) => a + b, 0) / difficultyScores.length : 0
+        }
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// All commits scores histogram
+router.get('/all-commits-scores', async (req, res, next) => {
+  try {
+    // Get all commits with scores
+    const commits = await Commit.findAll({
+      where: {
+        habitateScore: { [Op.not]: null }
+      },
+      attributes: ['habitateScore', 'suitabilityScore', 'difficultyScore']
+    });
+
+    if (commits.length === 0) {
+      return res.json({
+        habitateScore: [],
+        suitabilityScore: [],
+        difficultyScore: [],
+        total: 0,
+        stats: {
+          habitate: { min: 0, max: 0, avg: 0 },
+          suitability: { min: 0, max: 0, avg: 0 },
+          difficulty: { min: 0, max: 0, avg: 0 }
+        }
+      });
+    }
+
+    // Create histogram bins
+    const createHistogram = (values, min, max, binCount = 20) => {
+      const bins = Array(binCount).fill(0);
+      const binSize = (max - min) / binCount;
+      
+      values.forEach(value => {
+        if (value !== null && value !== undefined) {
+          const binIndex = Math.min(
+            Math.floor((value - min) / binSize),
+            binCount - 1
+          );
+          if (binIndex >= 0) {
+            bins[binIndex]++;
+          }
+        }
+      });
+
+      return bins.map((count, index) => ({
+        bin: min + (index * binSize) + (binSize / 2), // Center of bin
+        count
+      }));
+    };
+
+    // Extract scores
+    const habitateScores = commits
+      .map(c => parseFloat(c.habitateScore))
+      .filter(s => !isNaN(s));
+    const suitabilityScores = commits
+      .map(c => parseFloat(c.suitabilityScore))
+      .filter(s => !isNaN(s));
+    const difficultyScores = commits
+      .map(c => parseFloat(c.difficultyScore))
+      .filter(s => !isNaN(s));
+
+    // Calculate ranges - use reduce instead of spread operator to avoid stack overflow
+    const habitateMin = habitateScores.length > 0 ? habitateScores.reduce((a, b) => Math.min(a, b)) : 0;
+    const habitateMax = habitateScores.length > 0 ? habitateScores.reduce((a, b) => Math.max(a, b)) : 100;
+    const suitabilityMin = suitabilityScores.length > 0 ? suitabilityScores.reduce((a, b) => Math.min(a, b)) : 0;
+    const suitabilityMax = suitabilityScores.length > 0 ? suitabilityScores.reduce((a, b) => Math.max(a, b)) : 100;
+    const difficultyMin = difficultyScores.length > 0 ? difficultyScores.reduce((a, b) => Math.min(a, b)) : 0;
+    const difficultyMax = difficultyScores.length > 0 ? difficultyScores.reduce((a, b) => Math.max(a, b)) : 100;
 
     res.json({
       habitateScore: createHistogram(habitateScores, habitateMin, habitateMax),

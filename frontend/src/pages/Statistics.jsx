@@ -25,6 +25,13 @@ const Statistics = () => {
   const [earningsByRepo, setEarningsByRepo] = useState({ data: [], total: 0 });
   const [teamAccounts, setTeamAccounts] = useState([]);
   const [paidOutScores, setPaidOutScores] = useState(null);
+  const [allCommitsScores, setAllCommitsScores] = useState(null);
+  const [summaryStats, setSummaryStats] = useState({
+    tooEasyCount: 0,
+    avgSuitabilityScore: 0,
+    avgHabitatScore: 0,
+    avgDifficultyScore: 0
+  });
 
   useEffect(() => {
     fetchAllData();
@@ -40,7 +47,8 @@ const Statistics = () => {
         api.get('/stats/score-distribution'),
         api.get('/stats/score-distribution-by-repo'),
         api.get(`/stats/earnings-timeline?days=${timeRange}`),
-        api.get(`/stats/earnings-by-repo?days=${timeRange}`)
+        api.get(`/stats/earnings-by-repo?days=${timeRange}`),
+        api.get('/stats/all-commits-scores')
       ];
 
       if (isAdmin()) {
@@ -53,7 +61,7 @@ const Statistics = () => {
 
       const [
         repoCommits, repoScores, teamStats, scoreDist, scoreDistByRepo,
-        earningsTime, earningsRepo, teamAccountsData, paidOutScoresData
+        earningsTime, earningsRepo, allCommitsScoresData, teamAccountsData, paidOutScoresData
       ] = await Promise.all(promises);
 
       setRepoCommitsData(repoCommits.data.data || []);
@@ -63,6 +71,7 @@ const Statistics = () => {
       setScoreDistributionByRepo(scoreDistByRepo.data.data || []);
       setEarningsTimeline(earningsTime.data.data || []);
       setEarningsByRepo(earningsRepo.data);
+      setAllCommitsScores(allCommitsScoresData.data);
       if (isAdmin()) {
         setTeamAccounts(teamAccountsData.data.data || []);
         setPaidOutScores(paidOutScoresData.data);
@@ -730,6 +739,165 @@ const Statistics = () => {
     backgroundColor: 'transparent'
   } : null;
 
+  // All Commits Scores Histogram - Habitat Score
+  const allCommitsHabitatScoreOption = allCommitsScores && allCommitsScores.habitateScore && allCommitsScores.habitateScore.length > 0 ? {
+    title: {
+      text: 'All Commits - Habitat Score Distribution',
+      subtext: `Total: ${allCommitsScores.total || 0} commits | Avg: ${allCommitsScores.stats?.habitate?.avg?.toFixed(1) || 0}`,
+      left: 'center',
+      textStyle: { color: 'rgb(241, 245, 249)' },
+      subtextStyle: { color: 'rgb(148, 163, 184)' }
+    },
+    tooltip: {
+      trigger: 'axis',
+      formatter: (params) => {
+        const param = params[0];
+        return `Score: ${param.name}<br/>Count: ${param.value}`;
+      }
+    },
+    grid: {
+      left: '3%',
+      right: '4%',
+      bottom: '15%',
+      containLabel: true
+    },
+    xAxis: {
+      type: 'category',
+      name: 'Habitat Score Range',
+      nameTextStyle: { color: 'rgb(148, 163, 184)' },
+      data: allCommitsScores.habitateScore.map(item => item.bin.toFixed(1)),
+      axisLabel: {
+        color: 'rgb(148, 163, 184)',
+        rotate: 45,
+        interval: Math.floor(allCommitsScores.habitateScore.length / 10) || 1
+      }
+    },
+    yAxis: {
+      type: 'value',
+      name: 'Number of Commits',
+      nameTextStyle: { color: 'rgb(148, 163, 184)' },
+      axisLabel: { color: 'rgb(148, 163, 184)' },
+      splitLine: {
+        lineStyle: { color: '#334155' }
+      }
+    },
+    series: [
+      {
+        name: 'Commits',
+        type: 'bar',
+        data: allCommitsScores.habitateScore.map(item => item.count),
+        itemStyle: { color: '#16a34a' }
+      }
+    ],
+    backgroundColor: 'transparent'
+  } : null;
+
+  // All Commits Scores Histogram - Suitability Score
+  const allCommitsSuitabilityScoreOption = allCommitsScores && allCommitsScores.suitabilityScore && allCommitsScores.suitabilityScore.length > 0 ? {
+    title: {
+      text: 'All Commits - Suitability Score Distribution',
+      subtext: `Total: ${allCommitsScores.total || 0} commits | Avg: ${allCommitsScores.stats?.suitability?.avg?.toFixed(1) || 0}`,
+      left: 'center',
+      textStyle: { color: 'rgb(241, 245, 249)' },
+      subtextStyle: { color: 'rgb(148, 163, 184)' }
+    },
+    tooltip: {
+      trigger: 'axis',
+      formatter: (params) => {
+        const param = params[0];
+        return `Score: ${param.name}<br/>Count: ${param.value}`;
+      }
+    },
+    grid: {
+      left: '3%',
+      right: '4%',
+      bottom: '15%',
+      containLabel: true
+    },
+    xAxis: {
+      type: 'category',
+      name: 'Suitability Score Range',
+      nameTextStyle: { color: 'rgb(148, 163, 184)' },
+      data: allCommitsScores.suitabilityScore.map(item => item.bin.toFixed(1)),
+      axisLabel: {
+        color: 'rgb(148, 163, 184)',
+        rotate: 45,
+        interval: Math.floor(allCommitsScores.suitabilityScore.length / 10) || 1
+      }
+    },
+    yAxis: {
+      type: 'value',
+      name: 'Number of Commits',
+      nameTextStyle: { color: 'rgb(148, 163, 184)' },
+      axisLabel: { color: 'rgb(148, 163, 184)' },
+      splitLine: {
+        lineStyle: { color: '#334155' }
+      }
+    },
+    series: [
+      {
+        name: 'Commits',
+        type: 'bar',
+        data: allCommitsScores.suitabilityScore.map(item => item.count),
+        itemStyle: { color: '#3b82f6' }
+      }
+    ],
+    backgroundColor: 'transparent'
+  } : null;
+
+  // All Commits Scores Histogram - Difficulty Score
+  const allCommitsDifficultyScoreOption = allCommitsScores && allCommitsScores.difficultyScore && allCommitsScores.difficultyScore.length > 0 ? {
+    title: {
+      text: 'All Commits - Difficulty Score Distribution',
+      subtext: `Total: ${allCommitsScores.total || 0} commits | Avg: ${allCommitsScores.stats?.difficulty?.avg?.toFixed(1) || 0}`,
+      left: 'center',
+      textStyle: { color: 'rgb(241, 245, 249)' },
+      subtextStyle: { color: 'rgb(148, 163, 184)' }
+    },
+    tooltip: {
+      trigger: 'axis',
+      formatter: (params) => {
+        const param = params[0];
+        return `Score: ${param.name}<br/>Count: ${param.value}`;
+      }
+    },
+    grid: {
+      left: '3%',
+      right: '4%',
+      bottom: '15%',
+      containLabel: true
+    },
+    xAxis: {
+      type: 'category',
+      name: 'Difficulty Score Range',
+      nameTextStyle: { color: 'rgb(148, 163, 184)' },
+      data: allCommitsScores.difficultyScore.map(item => item.bin.toFixed(1)),
+      axisLabel: {
+        color: 'rgb(148, 163, 184)',
+        rotate: 45,
+        interval: Math.floor(allCommitsScores.difficultyScore.length / 10) || 1
+      }
+    },
+    yAxis: {
+      type: 'value',
+      name: 'Number of Commits',
+      nameTextStyle: { color: 'rgb(148, 163, 184)' },
+      axisLabel: { color: 'rgb(148, 163, 184)' },
+      splitLine: {
+        lineStyle: { color: '#334155' }
+      }
+    },
+    series: [
+      {
+        name: 'Commits',
+        type: 'bar',
+        data: allCommitsScores.difficultyScore.map(item => item.count),
+        itemStyle: { color: '#f59e0b' }
+      }
+    ],
+    backgroundColor: 'transparent'
+  } : null;
+
   // Paid Out Scores Histogram - Difficulty Score
   const paidOutDifficultyScoreOption = paidOutScores && paidOutScores.difficultyScore && paidOutScores.difficultyScore.length > 0 ? {
     title: {
@@ -1065,7 +1233,56 @@ const Statistics = () => {
         </Row>
       )}
 
-      {/* Row 6: Paid Out Commits Scores Histograms (Admin only) */}
+      {/* Row 6: All Commits Scores Histograms */}
+      {allCommitsScores && allCommitsScores.total > 0 && (
+        <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+          <Col xs={24}>
+            <Card
+              style={{
+                background: '#1e293b',
+                border: '1px solid #334155',
+                borderRadius: 12
+              }}
+              bodyStyle={{ padding: '20px' }}
+            >
+              <Title level={4} style={{ color: 'rgb(241, 245, 249)', marginBottom: 24, textAlign: 'center' }}>
+                All Commits Score Analysis
+              </Title>
+              <Row gutter={[16, 16]}>
+                {allCommitsHabitatScoreOption && (
+                  <Col xs={24} lg={8}>
+                    <ReactECharts
+                      option={allCommitsHabitatScoreOption}
+                      style={{ height: '350px', width: '100%' }}
+                      opts={{ renderer: 'svg' }}
+                    />
+                  </Col>
+                )}
+                {allCommitsSuitabilityScoreOption && (
+                  <Col xs={24} lg={8}>
+                    <ReactECharts
+                      option={allCommitsSuitabilityScoreOption}
+                      style={{ height: '350px', width: '100%' }}
+                      opts={{ renderer: 'svg' }}
+                    />
+                  </Col>
+                )}
+                {allCommitsDifficultyScoreOption && (
+                  <Col xs={24} lg={8}>
+                    <ReactECharts
+                      option={allCommitsDifficultyScoreOption}
+                      style={{ height: '350px', width: '100%' }}
+                      opts={{ renderer: 'svg' }}
+                    />
+                  </Col>
+                )}
+              </Row>
+            </Card>
+          </Col>
+        </Row>
+      )}
+
+      {/* Row 7: Paid Out Commits Scores Histograms (Admin only) */}
       {isAdmin() && paidOutScores && paidOutScores.total > 0 && (
         <Row gutter={[16, 16]}>
           <Col xs={24}>
