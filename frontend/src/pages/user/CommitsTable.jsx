@@ -24,7 +24,6 @@ import {
 import {
   SearchOutlined,
   ReloadOutlined,
-  FilterOutlined,
   ClearOutlined,
   StarOutlined,
   BookOutlined,
@@ -64,7 +63,6 @@ const CommitsTable = () => {
     return isAdmin() ? 'habitate_score' : 'commit_date';
   });
   const [sortOrder, setSortOrder] = useState('DESC');
-  const [showFilters, setShowFilters] = useState(false);
   const [reserveModalVisible, setReserveModalVisible] = useState(false);
   const [selectedCommit, setSelectedCommit] = useState(null);
   const [selectedAccountId, setSelectedAccountId] = useState(null);
@@ -858,69 +856,51 @@ const CommitsTable = () => {
     return count;
   }, [filters]);
 
+  const filterLabelStyle = { color: 'rgb(148, 163, 184)', fontSize: 12, display: 'block', marginBottom: 4 };
+  const filterBlockStyle = { marginBottom: 12 };
+
   return (
     <div>
-      <Card
-        style={{
-          background: '#1e293b',
-          border: '1px solid #334155',
-        }}
-      >
-        <Row justify="space-between" align="middle" style={{ marginBottom: 24 }}>
-          <Col>
-            <Title level={2} style={{ color: 'rgb(241, 245, 249)', margin: 0 }}>
-              Commits
-            </Title>
-          </Col>
-          <Col>
-            <Space>
-              <Button
-                icon={<FilterOutlined />}
-                onClick={() => setShowFilters(!showFilters)}
-                type={showFilters ? 'primary' : 'default'}
-              >
-                Filters {activeFiltersCount > 0 && `(${activeFiltersCount})`}
-              </Button>
-              <Button
-                icon={<ClearOutlined />}
-                onClick={handleClearFilters}
-                disabled={activeFiltersCount === 0}
-              >
-                Clear
-              </Button>
-              <Button
-                icon={<ReloadOutlined />}
-                onClick={fetchCommits}
-              >
-                Refresh
-              </Button>
-              <Button
-                icon={<SettingOutlined />}
-                onClick={() => setColumnCustomizeVisible(true)}
-                title="Customize Columns"
-              >
-                Columns
-              </Button>
-            </Space>
-          </Col>
-        </Row>
-
-        {showFilters && (
+      <Row gutter={16} wrap={false} style={{ alignItems: 'flex-start' }}>
+        {/* Left sidebar: filters - always visible */}
+        <Col
+          flex="0 0 280px"
+          style={{
+            position: 'sticky',
+            top: 0,
+           
+          }}
+        >
           <Card
             style={{
               background: '#0f172a',
               border: '1px solid #334155',
-              marginBottom: 16,
+              maxHeight: 'calc(88vh)',
+              overflowY: 'auto',
             }}
           >
-            <Row gutter={[16, 16]}>
+            <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+              <Text strong style={{ color: 'rgb(241, 245, 249)', fontSize: 14 }}>
+                Filters {activeFiltersCount > 0 && <Tag color="blue">{activeFiltersCount}</Tag>}
+              </Text>
+              <Space size="small">
+                <Button
+                  type="link"
+                  size="small"
+                  icon={<ClearOutlined />}
+                  onClick={handleClearFilters}
+                  disabled={activeFiltersCount === 0}
+                  style={{ padding: 0, color: 'rgb(148, 163, 184)' }}
+                >
+                  Clear
+                </Button>
+              </Space>
+            </div>
+            <Space direction="vertical" size="middle" style={{ width: '100%' }}>
               {/* Repository */}
-              <Col xs={24} sm={12} md={8} lg={6}>
-                <Text style={{ color: 'rgb(148, 163, 184)', fontSize: 12, display: 'block', marginBottom: 4 }}>
-                  Repository
-                </Text>
+              <div style={filterBlockStyle}>
+                <Text style={filterLabelStyle}>Repository</Text>
                 <Select
-                  size="large"
                   placeholder="All Repositories"
                   style={{ width: '100%' }}
                   allowClear
@@ -928,8 +908,8 @@ const CommitsTable = () => {
                   onChange={(value) => handleFilterChange('repo_id', value)}
                 >
                   {repos.map(repo => (
-                    <Option 
-                      key={repo.id} 
+                    <Option
+                      key={repo.id}
                       value={repo.id}
                       style={{
                         backgroundColor: repo.isActive ? 'rgba(22, 163, 74, 0.1)' : 'transparent',
@@ -941,310 +921,105 @@ const CommitsTable = () => {
                     </Option>
                   ))}
                 </Select>
-              </Col>
+              </div>
 
-              {/* Score Ranges */}
-              <Col xs={24} sm={12} md={8} lg={6}>
-                <Text style={{ color: 'rgb(148, 163, 184)', fontSize: 12, display: 'block', marginBottom: 4 }}>
-                  Habitat Score
-                </Text>
+              {isAdmin() && (
+                <>
+                  <div style={filterBlockStyle}>
+                    <Text style={filterLabelStyle}>Habitat Score</Text>
+                    <Input.Group compact>
+                      <InputNumber placeholder="Min" style={{ width: '50%' }} min={0} max={150} value={filters.min_habitate_score} onChange={(v) => handleFilterChange('min_habitate_score', v)} />
+                      <InputNumber placeholder="Max" style={{ width: '50%' }} min={0} max={150} value={filters.max_habitate_score} onChange={(v) => handleFilterChange('max_habitate_score', v)} />
+                    </Input.Group>
+                  </div>
+                  <div style={filterBlockStyle}>
+                    <Text style={filterLabelStyle}>Difficulty Score</Text>
+                    <Input.Group compact>
+                      <InputNumber placeholder="Min" style={{ width: '50%' }} min={0} max={100} step={0.1} value={filters.min_difficulty_score} onChange={(v) => handleFilterChange('min_difficulty_score', v)} />
+                      <InputNumber placeholder="Max" style={{ width: '50%' }} min={0} max={100} step={0.1} value={filters.max_difficulty_score} onChange={(v) => handleFilterChange('max_difficulty_score', v)} />
+                    </Input.Group>
+                  </div>
+                  <div style={filterBlockStyle}>
+                    <Text style={filterLabelStyle}>Suitability Score</Text>
+                    <Input.Group compact>
+                      <InputNumber placeholder="Min" style={{ width: '50%' }} min={0} max={100} step={0.1} value={filters.min_suitability_score} onChange={(v) => handleFilterChange('min_suitability_score', v)} />
+                      <InputNumber placeholder="Max" style={{ width: '50%' }} min={0} max={100} step={0.1} value={filters.max_suitability_score} onChange={(v) => handleFilterChange('max_suitability_score', v)} />
+                    </Input.Group>
+                  </div>
+                </>
+              )}
+
+              <div style={filterBlockStyle}>
+                <Text style={filterLabelStyle}>Additions</Text>
                 <Input.Group compact>
-                  <InputNumber
-                    size="large"
-                    placeholder="Min"
-                    style={{ width: '50%' }}
-                    min={0}
-                    max={150}
-                    value={filters.min_habitate_score}
-                    onChange={(value) => handleFilterChange('min_habitate_score', value)}
-                  />
-                  <InputNumber
-                    size="large"
-                    placeholder="Max"
-                    style={{ width: '50%' }}
-                    min={0}
-                    max={150}
-                    value={filters.max_habitate_score}
-                    onChange={(value) => handleFilterChange('max_habitate_score', value)}
-                  />
+                  <InputNumber placeholder="Min" style={{ width: '50%' }} min={0} value={filters.min_additions} onChange={(v) => handleFilterChange('min_additions', v)} />
+                  <InputNumber placeholder="Max" style={{ width: '50%' }} min={0} value={filters.max_additions} onChange={(v) => handleFilterChange('max_additions', v)} />
                 </Input.Group>
-              </Col>
-
-              <Col xs={24} sm={12} md={8} lg={6}>
-                <Text style={{ color: 'rgb(148, 163, 184)', fontSize: 12, display: 'block', marginBottom: 4 }}>
-                  Difficulty Score
-                </Text>
+              </div>
+              <div style={filterBlockStyle}>
+                <Text style={filterLabelStyle}>Deletions</Text>
                 <Input.Group compact>
-                  <InputNumber
-                    size="large"
-                    placeholder="Min"
-                    style={{ width: '50%' }}
-                    min={0}
-                    max={100}
-                    step={0.1}
-                    value={filters.min_difficulty_score}
-                    onChange={(value) => handleFilterChange('min_difficulty_score', value)}
-                  />
-                  <InputNumber
-                    size="large"
-                    placeholder="Max"
-                    style={{ width: '50%' }}
-                    min={0}
-                    max={100}
-                    step={0.1}
-                    value={filters.max_difficulty_score}
-                    onChange={(value) => handleFilterChange('max_difficulty_score', value)}
-                  />
+                  <InputNumber placeholder="Min" style={{ width: '50%' }} min={0} value={filters.min_deletions} onChange={(v) => handleFilterChange('min_deletions', v)} />
+                  <InputNumber placeholder="Max" style={{ width: '50%' }} min={0} value={filters.max_deletions} onChange={(v) => handleFilterChange('max_deletions', v)} />
                 </Input.Group>
-              </Col>
-
-              <Col xs={24} sm={12} md={8} lg={6}>
-                <Text style={{ color: 'rgb(148, 163, 184)', fontSize: 12, display: 'block', marginBottom: 4 }}>
-                  Suitability Score
-                </Text>
+              </div>
+              <div style={filterBlockStyle}>
+                <Text style={filterLabelStyle}>File Changes</Text>
                 <Input.Group compact>
-                  <InputNumber
-                    size="large"
-                    placeholder="Min"
-                    style={{ width: '50%' }}
-                    min={0}
-                    max={100}
-                    step={0.1}
-                    value={filters.min_suitability_score}
-                    onChange={(value) => handleFilterChange('min_suitability_score', value)}
-                  />
-                  <InputNumber
-                    size="large"
-                    placeholder="Max"
-                    style={{ width: '50%' }}
-                    min={0}
-                    max={100}
-                    step={0.1}
-                    value={filters.max_suitability_score}
-                    onChange={(value) => handleFilterChange('max_suitability_score', value)}
-                  />
+                  <InputNumber placeholder="Min" style={{ width: '50%' }} min={0} value={filters.min_file_changes} onChange={(v) => handleFilterChange('min_file_changes', v)} />
+                  <InputNumber placeholder="Max" style={{ width: '50%' }} min={0} value={filters.max_file_changes} onChange={(v) => handleFilterChange('max_file_changes', v)} />
                 </Input.Group>
-              </Col>
+              </div>
 
-              {/* File Statistics */}
-              <Col xs={24} sm={12} md={8} lg={6}>
-                <Text style={{ color: 'rgb(148, 163, 184)', fontSize: 12, display: 'block', marginBottom: 4 }}>
-                  Additions
-                </Text>
-                <Input.Group compact>
-                  <InputNumber
-                    size="large"
-                    placeholder="Min"
-                    style={{ width: '50%' }}
-                    min={0}
-                    value={filters.min_additions}
-                    onChange={(value) => handleFilterChange('min_additions', value)}
-                  />
-                  <InputNumber
-                    size="large"
-                    placeholder="Max"
-                    style={{ width: '50%' }}
-                    min={0}
-                    value={filters.max_additions}
-                    onChange={(value) => handleFilterChange('max_additions', value)}
-                  />
-                </Input.Group>
-              </Col>
+              <div style={filterBlockStyle}>
+                <Text style={filterLabelStyle}>Author</Text>
+                <Input placeholder="Search author" value={filters.author} onChange={(e) => handleFilterChange('author', e.target.value)} allowClear />
+              </div>
+              <div style={filterBlockStyle}>
+                <Text style={filterLabelStyle}>Base Commit</Text>
+                <Input placeholder="Search base commit" value={filters.base_commit} onChange={(e) => handleFilterChange('base_commit', e.target.value)} allowClear />
+              </div>
+              <div style={filterBlockStyle}>
+                <Text style={filterLabelStyle}>Merged Commit</Text>
+                <Input placeholder="Search merged commit" value={filters.merged_commit} onChange={(e) => handleFilterChange('merged_commit', e.target.value)} allowClear />
+              </div>
+              <div style={filterBlockStyle}>
+                <Text style={filterLabelStyle}>PR Number</Text>
+                <InputNumber placeholder="PR #" style={{ width: '100%' }} min={1} value={filters.pr_number} onChange={(v) => handleFilterChange('pr_number', v)} />
+              </div>
+              <div style={filterBlockStyle}>
+                <Text style={filterLabelStyle}>Message</Text>
+                <Input placeholder="Search in message" value={filters.message} onChange={(e) => handleFilterChange('message', e.target.value)} allowClear />
+              </div>
+              <div style={filterBlockStyle}>
+                <Text style={filterLabelStyle}>Commit Date</Text>
+                <RangePicker style={{ width: '100%' }} value={filters.date_range} onChange={(dates) => handleFilterChange('date_range', dates)} format="YYYY-MM-DD" />
+              </div>
 
-              <Col xs={24} sm={12} md={8} lg={6}>
-                <Text style={{ color: 'rgb(148, 163, 184)', fontSize: 12, display: 'block', marginBottom: 4 }}>
-                  Deletions
-                </Text>
-                <Input.Group compact>
-                  <InputNumber
-                    size="large"
-                    placeholder="Min"
-                    style={{ width: '50%' }}
-                    min={0}
-                    value={filters.min_deletions}
-                    onChange={(value) => handleFilterChange('min_deletions', value)}
-                  />
-                  <InputNumber
-                    size="large"
-                    placeholder="Max"
-                    style={{ width: '50%' }}
-                    min={0}
-                    value={filters.max_deletions}
-                    onChange={(value) => handleFilterChange('max_deletions', value)}
-                  />
-                </Input.Group>
-              </Col>
-
-
-              <Col xs={24} sm={12} md={8} lg={6}>
-                <Text style={{ color: 'rgb(148, 163, 184)', fontSize: 12, display: 'block', marginBottom: 4 }}>
-                  File Changes
-                </Text>
-                <Input.Group compact>
-                  <InputNumber
-                    size="large"
-                    placeholder="Min"
-                    style={{ width: '50%' }}
-                    min={0}
-                    value={filters.min_file_changes}
-                    onChange={(value) => handleFilterChange('min_file_changes', value)}
-                  />
-                  <InputNumber
-                    size="large"
-                    placeholder="Max"
-                    style={{ width: '50%' }}
-                    min={0}
-                    value={filters.max_file_changes}
-                    onChange={(value) => handleFilterChange('max_file_changes', value)}
-                  />
-                </Input.Group>
-              </Col>
-
-              {/* Text Search */}
-              <Col xs={24} sm={12} md={8} lg={6}>
-                <Text style={{ color: 'rgb(148, 163, 184)', fontSize: 12, display: 'block', marginBottom: 4 }}>
-                  Author
-                </Text>
-                <Input
-                  size="large"
-                  placeholder="Search author"
-                  value={filters.author}
-                  onChange={(e) => handleFilterChange('author', e.target.value)}
-                  allowClear
-                />
-              </Col>
-
-              <Col xs={24} sm={12} md={8} lg={6}>
-                <Text style={{ color: 'rgb(148, 163, 184)', fontSize: 12, display: 'block', marginBottom: 4 }}>
-                  Base Commit
-                </Text>
-                <Input
-                  size="large"
-                  placeholder="Search base commit"
-                  value={filters.base_commit}
-                  onChange={(e) => handleFilterChange('base_commit', e.target.value)}
-                  allowClear
-                />
-              </Col>
-
-              <Col xs={24} sm={12} md={8} lg={6}>
-                <Text style={{ color: 'rgb(148, 163, 184)', fontSize: 12, display: 'block', marginBottom: 4 }}>
-                  Merged Commit
-                </Text>
-                <Input
-                  size="large"
-                  placeholder="Search merged commit"
-                  value={filters.merged_commit}
-                  onChange={(e) => handleFilterChange('merged_commit', e.target.value)}
-                  allowClear
-                />
-              </Col>
-
-              <Col xs={24} sm={12} md={8} lg={6}>
-                <Text style={{ color: 'rgb(148, 163, 184)', fontSize: 12, display: 'block', marginBottom: 4 }}>
-                  PR Number
-                </Text>
-                <InputNumber
-                  size="large"
-                  placeholder="PR #"
-                  style={{ width: '100%' }}
-                  min={1}
-                  value={filters.pr_number}
-                  onChange={(value) => handleFilterChange('pr_number', value)}
-                />
-              </Col>
-
-              <Col xs={24} sm={12} md={8} lg={6}>
-                <Text style={{ color: 'rgb(148, 163, 184)', fontSize: 12, display: 'block', marginBottom: 4 }}>
-                  Message
-                </Text>
-                <Input
-                  size="large"
-                  placeholder="Search in message"
-                  value={filters.message}
-                  onChange={(e) => handleFilterChange('message', e.target.value)}
-                  allowClear
-                />
-              </Col>
-
-              {/* Date Range */}
-              <Col xs={24} sm={12} md={8} lg={6}>
-                <Text style={{ color: 'rgb(148, 163, 184)', fontSize: 12, display: 'block', marginBottom: 4 }}>
-                  Commit Date
-                </Text>
-                <RangePicker
-                  size="large"
-                  style={{ width: '100%' }}
-                  value={filters.date_range}
-                  onChange={(dates) => handleFilterChange('date_range', dates)}
-                  format="YYYY-MM-DD"
-                />
-              </Col>
-
-              {/* Boolean Filters */}
-              <Col xs={24} sm={12} md={8} lg={6}>
-                <Text style={{ color: 'rgb(148, 163, 184)', fontSize: 12, display: 'block', marginBottom: 4 }}>
-                  Is Merge
-                </Text>
-                <Select
-                  size="large"
-                  placeholder="All"
-                  style={{ width: '100%' }}
-                  allowClear
-                  value={filters.is_merge}
-                  onChange={(value) => handleFilterChange('is_merge', value)}
-                >
+              <div style={filterBlockStyle}>
+                <Text style={filterLabelStyle}>Is Merge</Text>
+                <Select placeholder="All" style={{ width: '100%' }} allowClear value={filters.is_merge} onChange={(v) => handleFilterChange('is_merge', v)}>
                   <Option value={true}>Yes</Option>
                   <Option value={false}>No</Option>
                 </Select>
-              </Col>
-
-              <Col xs={24} sm={12} md={8} lg={6}>
-                <Text style={{ color: 'rgb(148, 163, 184)', fontSize: 12, display: 'block', marginBottom: 4 }}>
-                  Unsuitable
-                </Text>
-                <Select
-                  size="large"
-                  placeholder="All"
-                  style={{ width: '100%' }}
-                  allowClear
-                  value={filters.is_unsuitable}
-                  onChange={(value) => handleFilterChange('is_unsuitable', value)}
-                >
+              </div>
+              <div style={filterBlockStyle}>
+                <Text style={filterLabelStyle}>Unsuitable</Text>
+                <Select placeholder="All" style={{ width: '100%' }} allowClear value={filters.is_unsuitable} onChange={(v) => handleFilterChange('is_unsuitable', v)}>
                   <Option value={true}>Yes</Option>
                   <Option value={false}>No</Option>
                 </Select>
-              </Col>
-
-              <Col xs={24} sm={12} md={8} lg={6}>
-                <Text style={{ color: 'rgb(148, 163, 184)', fontSize: 12, display: 'block', marginBottom: 4 }}>
-                  Behavior Preserving Refactor
-                </Text>
-                <Select
-                  size="large"
-                  placeholder="All"
-                  style={{ width: '100%' }}
-                  allowClear
-                  value={filters.is_behavior_preserving_refactor}
-                  onChange={(value) => handleFilterChange('is_behavior_preserving_refactor', value)}
-                >
+              </div>
+              <div style={filterBlockStyle}>
+                <Text style={filterLabelStyle}>Behavior Preserving Refactor</Text>
+                <Select placeholder="All" style={{ width: '100%' }} allowClear value={filters.is_behavior_preserving_refactor} onChange={(v) => handleFilterChange('is_behavior_preserving_refactor', v)}>
                   <Option value={true}>Yes</Option>
                   <Option value={false}>No</Option>
                 </Select>
-              </Col>
-
-              <Col xs={24} sm={12} md={8} lg={6}>
-                <Text style={{ color: 'rgb(148, 163, 184)', fontSize: 12, display: 'block', marginBottom: 4 }}>
-                  Status
-                </Text>
-                <Select
-                  size="large"
-                  placeholder="All Status"
-                  style={{ width: '100%' }}
-                  allowClear
-                  value={filters.status}
-                  onChange={(value) => handleFilterChange('status', value)}
-                >
+              </div>
+              <div style={filterBlockStyle}>
+                <Text style={filterLabelStyle}>Status</Text>
+                <Select placeholder="All Status" style={{ width: '100%' }} allowClear value={filters.status} onChange={(v) => handleFilterChange('status', v)}>
                   <Option value="available">Available</Option>
                   <Option value="reserved">Reserved</Option>
                   <Option value="already_reserved">Already Reserved</Option>
@@ -1255,34 +1030,45 @@ const CommitsTable = () => {
                   <Option value="failed">Failed</Option>
                   <Option value="error">Error</Option>
                 </Select>
-              </Col>
+              </div>
 
-              {/* Special Pattern Filters */}
-              <Col xs={24} sm={12} md={8} lg={6}>
+              <div style={filterBlockStyle}>
                 <Space direction="vertical" style={{ width: '100%' }}>
-                  <Checkbox
-                    checked={filters.has_dependency_changes === false}
-                    onChange={(e) => handleFilterChange('has_dependency_changes', !e.target.checked ? null : false)}
-                  >
-                    No Dependency Changes
-                  </Checkbox>
-                  <Checkbox
-                    checked={filters.single_file_200plus}
-                    onChange={(e) => handleFilterChange('single_file_200plus', e.target.checked)}
-                  >
-                    Single File 200+ Additions
-                  </Checkbox>
-                  <Checkbox
-                    checked={filters.multi_file_300plus}
-                    onChange={(e) => handleFilterChange('multi_file_300plus', e.target.checked)}
-                  >
-                    Multi File 300+ Additions
-                  </Checkbox>
+                  <Checkbox checked={filters.has_dependency_changes === false} onChange={(e) => handleFilterChange('has_dependency_changes', !e.target.checked ? null : false)}>No Dependency Changes</Checkbox>
+                  <Checkbox checked={filters.single_file_200plus} onChange={(e) => handleFilterChange('single_file_200plus', e.target.checked)}>Single File 200+ Additions</Checkbox>
+                  <Checkbox checked={filters.multi_file_300plus} onChange={(e) => handleFilterChange('multi_file_300plus', e.target.checked)}>Multi File 300+ Additions</Checkbox>
+                </Space>
+              </div>
+            </Space>
+          </Card>
+        </Col>
+
+        {/* Right: table area */}
+        <Col flex="1" style={{ minWidth: 0 }}>
+          <Card
+            style={{
+              background: '#1e293b',
+              border: '1px solid #334155',
+              height: 'calc(88vh)',
+            }}
+          >
+            <Row justify="space-between" align="middle" style={{ marginBottom: 16 }}>
+              <Col>
+                <Title level={2} style={{ color: 'rgb(241, 245, 249)', margin: 0 }}>
+                  Commits
+                </Title>
+              </Col>
+              <Col>
+                <Space>
+                  <Button icon={<ReloadOutlined />} onClick={fetchCommits}>
+                    Refresh
+                  </Button>
+                  <Button icon={<SettingOutlined />} onClick={() => setColumnCustomizeVisible(true)} title="Customize Columns">
+                    Columns
+                  </Button>
                 </Space>
               </Col>
             </Row>
-          </Card>
-        )}
 
         <Table
           columns={columns}
@@ -1299,7 +1085,7 @@ const CommitsTable = () => {
           onChange={handleTableChange}
           scroll={{ 
             x: 'max-content',
-            y: 'calc(100vh - 400px)'
+            y: 'calc(64vh)'
           }}
           sticky={{
             offsetHeader: 0
@@ -1307,8 +1093,10 @@ const CommitsTable = () => {
           style={{
             background: '#1e293b',
           }}
-        />
-      </Card>
+            />
+          </Card>
+        </Col>
+      </Row>
 
       <Modal
         title="Reserve Commit"
