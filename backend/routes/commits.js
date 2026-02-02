@@ -32,8 +32,15 @@ router.get('/', commitFilterRules, paginationRules, handleValidationErrors, asyn
 
     // Build where clause
     const where = {};
-    if (req.query.repo_id) {
-      where.repoId = parseInt(req.query.repo_id);
+    // Support repo_ids (array) or repo_id (single)
+    const repoIdsRaw = req.query.repo_ids ?? req.query.repo_id;
+    if (repoIdsRaw !== undefined && repoIdsRaw !== '') {
+      const ids = Array.isArray(repoIdsRaw)
+        ? repoIdsRaw.map(id => parseInt(id, 10)).filter(n => !Number.isNaN(n))
+        : [parseInt(repoIdsRaw, 10)].filter(n => !Number.isNaN(n));
+      if (ids.length > 0) {
+        where.repoId = ids.length === 1 ? ids[0] : { [Op.in]: ids };
+      }
     }
     if (req.query.min_habitate_score) {
       where.habitateScore = { [Op.gte]: parseInt(req.query.min_habitate_score) };

@@ -68,6 +68,7 @@ const CommitsTable = () => {
   const [selectedAccountId, setSelectedAccountId] = useState(null);
   const [actionLoading, setActionLoading] = useState({});
   const [columnCustomizeVisible, setColumnCustomizeVisible] = useState(false);
+  const [myStats, setMyStats] = useState(null); // { reservations: { total, active }, memoCommits: { total } }
   
   // Column visibility state - load from localStorage or use defaults
   const [visibleColumns, setVisibleColumns] = useState(() => {
@@ -104,7 +105,7 @@ const CommitsTable = () => {
   });
 
   const [filters, setFilters] = useState({
-    repo_id: null,
+    repo_ids: [],
     min_habitate_score: null,
     max_habitate_score: null,
     min_difficulty_score: null,
@@ -135,6 +136,19 @@ const CommitsTable = () => {
   useEffect(() => {
     fetchRepos();
     fetchAccounts();
+  }, []);
+
+  const fetchMyStats = async () => {
+    try {
+      const res = await api.get('/stats/my-stats');
+      setMyStats(res.data);
+    } catch (e) {
+      // Non-blocking; stats are optional
+    }
+  };
+
+  useEffect(() => {
+    fetchMyStats();
   }, []);
 
   const fetchAccounts = async () => {
@@ -172,6 +186,7 @@ const CommitsTable = () => {
       // Add all filters (except status, which is filtered client-side)
       Object.keys(filters).forEach(key => {
         const value = filters[key];
+        if (key === 'repo_ids') return; // handled below
         if (value !== null && value !== '' && value !== false && key !== 'status') {
           if (key === 'date_range' && value && value.length === 2) {
             params.date_from = value[0].format('YYYY-MM-DD');
@@ -181,6 +196,9 @@ const CommitsTable = () => {
           }
         }
       });
+      if (filters.repo_ids && filters.repo_ids.length > 0) {
+        params.repo_ids = filters.repo_ids;
+      }
 
       // If status filter is active, fetch more records for client-side filtering
       if (filters.status) {
@@ -246,7 +264,7 @@ const CommitsTable = () => {
 
   const handleClearFilters = () => {
     setFilters({
-      repo_id: null,
+      repo_ids: [],
       min_habitate_score: null,
       max_habitate_score: null,
       min_difficulty_score: null,
@@ -351,6 +369,7 @@ const CommitsTable = () => {
       message.success('Commit reserved successfully');
       setReserveModalVisible(false);
       fetchCommits();
+      fetchMyStats();
     } catch (error) {
       message.error(error.response?.data?.error || 'Failed to reserve commit');
     } finally {
@@ -364,6 +383,7 @@ const CommitsTable = () => {
       await api.delete(`/commits/${commitId}/reserve`);
       message.success('Reservation cancelled');
       fetchCommits();
+      fetchMyStats();
     } catch (error) {
       message.error(error.response?.data?.error || 'Failed to cancel reservation');
     } finally {
@@ -845,6 +865,10 @@ const CommitsTable = () => {
     let count = 0;
     Object.keys(filters).forEach(key => {
       const value = filters[key];
+      if (key === 'repo_ids') {
+        if (value && value.length > 0) count++;
+        return;
+      }
       if (value !== null && value !== '' && value !== false) {
         if (key === 'date_range' && value && value.length === 2) {
           count++;
@@ -897,15 +921,16 @@ const CommitsTable = () => {
               </Space>
             </div>
             <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-              {/* Repository */}
+              {/* Repository (multi-select) */}
               <div style={filterBlockStyle}>
                 <Text style={filterLabelStyle}>Repository</Text>
                 <Select
+                  mode="multiple"
                   placeholder="All Repositories"
                   style={{ width: '100%' }}
                   allowClear
-                  value={filters.repo_id}
-                  onChange={(value) => handleFilterChange('repo_id', value)}
+                  value={filters.repo_ids || []}
+                  onChange={(value) => handleFilterChange('repo_ids', value)}
                 >
                   {repos.map(repo => (
                     <Option
@@ -1052,7 +1077,7 @@ const CommitsTable = () => {
               height: 'calc(88vh)',
             }}
           >
-            <Row justify="space-between" align="middle" style={{ marginBottom: 16 }}>
+            <Row justify="space-between" align="middle" style={{ marginBottom: 8 }}>
               <Col>
                 <Title level={2} style={{ color: 'rgb(241, 245, 249)', margin: 0 }}>
                   Commits
@@ -1068,6 +1093,35 @@ const CommitsTable = () => {
                   </Button>
                 </Space>
               </Col>
+            </Row>
+            {/* Reservations & Memo counts - highlighted */}
+            <Row align="middle" style={{ marginBottom: 16, gap: 16, flexWrap: 'wrap' }}>
+              <Space size="middle" wrap>
+                <span
+                  style={{
+                    background: 'rgba(22, 163, 74, 0.2)',
+                    color: '#4ade80',
+                    padding: '4px 12px',
+                    borderRadius: 8,
+                    fontWeight: 600,
+                    fontSize: 14,
+                  }}
+                >
+                  Reservations: {myStats?.reservations?.total ?? '—'} {myStats?.reservations?.active != null && `(${myStats.reservations.active} active)`}
+                </span>
+                <span
+                  style={{
+                    background: 'rgba(245, 158, 11, 0.2)',
+                    color: '#fbbf24',
+                    padding: '4px 12px',
+                    borderRadius: 8,
+                    fontWeight: 600,
+                    fontSize: 14,
+                  }}
+                >
+                  Memo: {myStats?.memoCommits?.total ?? '—'}
+                </span>
+              </Space>
             </Row>
 
         <Table
@@ -1085,7 +1139,7 @@ const CommitsTable = () => {
           onChange={handleTableChange}
           scroll={{ 
             x: 'max-content',
-            y: 'calc(64vh)'
+            y: 'calc(62vh)'
           }}
           sticky={{
             offsetHeader: 0

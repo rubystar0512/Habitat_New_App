@@ -42,6 +42,7 @@ const registerRules = [
 // Commit validations
 const commitFilterRules = [
   query('repo_id').optional().isInt({ min: 1 }),
+  query('repo_ids').optional(), // array of repo ids (e.g. repo_ids=1&repo_ids=2)
   query('min_habitate_score').optional().isInt({ min: 0 }),
   query('max_habitate_score').optional().isInt({ min: 0 }),
   query('min_difficulty_score').optional().isFloat({ min: 0, max: 100 }),
