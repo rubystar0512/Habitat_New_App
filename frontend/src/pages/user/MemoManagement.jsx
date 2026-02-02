@@ -158,7 +158,7 @@ const MemoManagement = () => {
 
   const handleClearFilters = () => {
     setFilters({
-      repo_id: null,
+      repo_ids: [],
       priority_min: null,
       priority_max: null,
     });
@@ -193,19 +193,12 @@ const MemoManagement = () => {
 
   const activeFiltersCount = useMemo(() => {
     let count = 0;
-    if (filters.repo_id) count++;
+    if (filters.repo_ids && filters.repo_ids.length > 0) count++;
     if (filters.priority_min !== null && filters.priority_min !== undefined) count++;
     if (filters.priority_max !== null && filters.priority_max !== undefined) count++;
     return count;
   }, [filters]);
 
-  const getScoreColor = (score, maxScore = 100) => {
-    if (!score) return 'default';
-    const percentage = (score / maxScore) * 100;
-    if (percentage >= 80) return 'success';
-    if (percentage >= 50) return 'warning';
-    return 'error';
-  };
 
   const columns = [
     {
@@ -366,7 +359,6 @@ const MemoManagement = () => {
       title: 'Priority',
       dataIndex: 'priority',
       key: 'priority',
-      width: 100,
       align: 'center',
       sorter: (a, b) => (a.priority || 0) - (b.priority || 0),
       render: (priority) => (
@@ -376,111 +368,13 @@ const MemoManagement = () => {
       ),
     },
     {
-      title: 'Files',
-      dataIndex: 'file_changes',
-      key: 'file_changes',
-      width: 80,
-      align: 'center',
-      sorter: (a, b) => (a.file_changes || 0) - (b.file_changes || 0),
-    },
-    {
-      title: 'Additions',
-      dataIndex: 'additions',
-      key: 'additions',
-      width: 100,
-      align: 'center',
-      sorter: (a, b) => (a.additions || 0) - (b.additions || 0),
-      render: (val) => <span style={{ color: '#52c41a' }}>+{val || 0}</span>,
-    },
-    {
-      title: 'Deletions',
-      dataIndex: 'deletions',
-      key: 'deletions',
-      width: 100,
-      align: 'center',
-      sorter: (a, b) => (a.deletions || 0) - (b.deletions || 0),
-      render: (val) => <span style={{ color: '#ff4d4f' }}>-{val || 0}</span>,
-    },
-    {
-      title: 'Net Change',
-      dataIndex: 'net_change',
-      key: 'net_change',
-      width: 100,
-      align: 'center',
-      sorter: (a, b) => (a.net_change || 0) - (b.net_change || 0),
-      render: (val) => {
-        const color = val >= 0 ? '#52c41a' : '#ff4d4f';
-        return <span style={{ color }}>{val >= 0 ? '+' : ''}{val || 0}</span>;
-      },
-    },
-    {
-      title: 'Habitat Score',
-      dataIndex: 'habitate_score',
-      key: 'habitate_score',
-      width: 120,
-      align: 'center',
-      sorter: (a, b) => (a.habitate_score || 0) - (b.habitate_score || 0),
-      render: (score) => (
-        <Tag color={getScoreColor(score, 150)}>{score || 0}</Tag>
-      ),
-    },
-    {
-      title: 'Difficulty',
-      dataIndex: 'difficulty_score',
-      key: 'difficulty_score',
-      width: 100,
-      align: 'center',
-      sorter: (a, b) => {
-        const aVal = a.difficulty_score ? parseFloat(a.difficulty_score) : 0;
-        const bVal = b.difficulty_score ? parseFloat(b.difficulty_score) : 0;
-        return aVal - bVal;
-      },
-      render: (score) => score ? (
-        <Tag color={getScoreColor(score, 100)}>{parseFloat(score).toFixed(1)}</Tag>
-      ) : '-',
-    },
-    {
-      title: 'Suitability',
-      dataIndex: 'suitability_score',
-      key: 'suitability_score',
-      width: 100,
-      align: 'center',
-      sorter: (a, b) => {
-        const aVal = a.suitability_score ? parseFloat(a.suitability_score) : 0;
-        const bVal = b.suitability_score ? parseFloat(b.suitability_score) : 0;
-        return aVal - bVal;
-      },
-      render: (score) => score ? (
-        <Tag color={getScoreColor(score, 100)}>{parseFloat(score).toFixed(1)}</Tag>
-      ) : '-',
-    },
-    {
-      title: 'Author',
-      dataIndex: 'author',
-      key: 'author',
-      width: 150,
-      sorter: (a, b) => (a.author || '').localeCompare(b.author || ''),
-      render: (author) => author || '-',
-    },
-    {
-      title: 'Date',
-      dataIndex: 'commit_date',
-      key: 'commit_date',
-      width: 180,
-      sorter: (a, b) => {
-        if (!a.commit_date && !b.commit_date) return 0;
-        if (!a.commit_date) return 1;
-        if (!b.commit_date) return -1;
-        return new Date(a.commit_date) - new Date(b.commit_date);
-      },
-      render: (date) => date ? dayjs(date).format('YYYY-MM-DD HH:mm') : '-',
-    },
-    {
       title: 'Notes',
       dataIndex: 'notes',
       key: 'notes',
-      width: 200,
-      ellipsis: true,
+      width: 250,
+      ellipsis: {
+        showTitle: false,
+      },
       render: (notes) => (
         <Tooltip title={notes || 'No notes'}>
           <Text style={{ color: notes ? 'rgb(148, 163, 184)' : 'rgb(100, 116, 139)', fontSize: 12 }}>
