@@ -265,6 +265,28 @@ const CommitsTable = () => {
     }
   };
 
+  // Flatten chain tree into list of commits with scores (for bar chart)
+  const chainCommitsForChart = useMemo(() => {
+    if (!chainTree || !chainTree.children?.length) return [];
+    const list = [];
+    function walk(node) {
+      if (!node) return;
+      if (node.commitId != null) {
+        const short = (node.mergedCommit || node.name || '').toString().substring(0, 8);
+        list.push({
+          id: node.commitId,
+          label: `${short} (${node.commitId})`,
+          habitateScore: node.habitateScore != null ? Number(node.habitateScore) : null,
+          suitabilityScore: node.suitabilityScore != null ? Number(node.suitabilityScore) : null,
+          difficultyScore: node.difficultyScore != null ? Number(node.difficultyScore) : null,
+        });
+      }
+      (node.children || []).forEach(walk);
+    }
+    chainTree.children.forEach(walk);
+    return list;
+  }, [chainTree]);
+
   const handleTableChange = (newPagination, newFilters, newSorter) => {
     if (newSorter && newSorter.field) {
       // Map frontend field names to backend field names
@@ -1225,69 +1247,159 @@ const CommitsTable = () => {
                     </Col>
                     {chainTotalNodes > 0 && (
                       <Col>
-                        <Text style={{ color: 'rgb(148, 163, 184)' }}>{chainTotalNodes} node(s)</Text>
+                        <Text style={{ color: 'rgb(148, 163, 184)' }}>Chain: {chainTotalNodes} node(s)</Text>
                       </Col>
                     )}
                   </Row>
                   {chainTree && (
-                    <div style={{ marginTop: 16, minHeight: 400 }}>
-                      <ReactECharts
-                        option={{
-                          tooltip: {
-                            trigger: 'item',
-                            formatter: (params) => {
-                              const d = params.data;
-                              if (!d) return params.name;
-                              let s = `<strong>${params.name}</strong>`;
-                              if (d.baseCommit) s += `<br/>Base: ${d.baseCommit.substring(0, 12)}...`;
-                              if (d.mergedCommit) s += `<br/>Merged: ${d.mergedCommit.substring(0, 12)}...`;
-                              if (d.status) s += `<br/>Status: ${d.status}`;
-                              if (d.habitateScore != null) s += `<br/>Habitat: ${d.habitateScore}`;
-                              if (d.repoName) s += `<br/>Repo: ${d.repoName}`;
-                              return s;
-                            }
-                          },
-                          series: [
-                            {
-                              type: 'tree',
-                              data: [chainTree],
-                              left: '2%',
-                              right: '2%',
-                              top: '8%',
-                              bottom: '8%',
-                              orient: 'TB',
-                              symbol: 'roundRect',
-                              symbolSize: 10,
-                              edgeShape: 'polyline',
-                              edgeForkPosition: '50%',
-                              initialTreeDepth: -1,
-                              lineStyle: { color: '#334155', width: 1.5 },
-                              itemStyle: {
-                                color: '#16a34a',
-                                borderColor: '#334155',
-                                borderWidth: 1
+                    <Row gutter={16} style={{ marginTop: 16, minHeight: 400 }}>
+                      <Col xs={24} lg={14}>
+                        <div style={{ minHeight: 450 }}>
+                          <ReactECharts
+                            option={{
+                              title: {
+                                text: 'Commit chain',
+                                left: 'center',
+                                textStyle: { color: 'rgb(241, 245, 249)', fontSize: 14 }
                               },
-                              label: {
-                                position: 'left',
-                                verticalAlign: 'middle',
-                                align: 'right',
-                                color: 'rgb(241, 245, 249)',
-                                fontSize: 12
+                              tooltip: {
+                                trigger: 'item',
+                                formatter: (params) => {
+                                  const d = params.data;
+                                  if (!d) return params.name;
+                                  let s = `<strong>${params.name}</strong>`;
+                                  if (d.baseCommit) s += `<br/>Base: ${d.baseCommit.substring(0, 12)}...`;
+                                  if (d.mergedCommit) s += `<br/>Merged: ${d.mergedCommit.substring(0, 12)}...`;
+                                  if (d.status) s += `<br/>Status: ${d.status}`;
+                                  if (d.habitateScore != null) s += `<br/>Habitat: ${d.habitateScore}`;
+                                  if (d.suitabilityScore != null) s += `<br/>Suitability: ${d.suitabilityScore}`;
+                                  if (d.difficultyScore != null) s += `<br/>Difficulty: ${d.difficultyScore}`;
+                                  if (d.repoName) s += `<br/>Repo: ${d.repoName}`;
+                                  return s;
+                                }
                               },
-                              leaves: {
-                                label: { position: 'left', verticalAlign: 'middle', align: 'right' }
-                              },
-                              expandAndCollapse: true,
-                              animationDuration: 550,
-                              animationDurationUpdate: 750
-                            }
-                          ],
-                          backgroundColor: 'transparent'
-                        }}
-                        style={{ height: 450, width: '100%' }}
-                        opts={{ renderer: 'svg' }}
-                      />
-                    </div>
+                              series: [
+                                {
+                                  type: 'tree',
+                                  data: [chainTree],
+                                  left: '2%',
+                                  right: '2%',
+                                  top: '15%',
+                                  bottom: '8%',
+                                  orient: 'TB',
+                                  symbol: 'roundRect',
+                                  symbolSize: 10,
+                                  edgeShape: 'polyline',
+                                  edgeForkPosition: '50%',
+                                  initialTreeDepth: -1,
+                                  lineStyle: { color: '#334155', width: 1.5 },
+                                  itemStyle: {
+                                    color: '#16a34a',
+                                    borderColor: '#334155',
+                                    borderWidth: 1
+                                  },
+                                  label: {
+                                    position: 'left',
+                                    verticalAlign: 'middle',
+                                    align: 'right',
+                                    color: 'rgb(241, 245, 249)',
+                                    fontSize: 12
+                                  },
+                                  leaves: {
+                                    label: { position: 'left', verticalAlign: 'middle', align: 'right' }
+                                  },
+                                  expandAndCollapse: true,
+                                  animationDuration: 550,
+                                  animationDurationUpdate: 750
+                                }
+                              ],
+                              backgroundColor: 'transparent'
+                            }}
+                            style={{ height: Math.max(450, (chainTotalNodes || 1) * 55), width: '100%' }}
+                            opts={{ renderer: 'svg' }}
+                          />
+                        </div>
+                      </Col>
+                      <Col xs={24} lg={10}>
+                        {chainCommitsForChart.length > 0 ? (
+                          <div style={{ minHeight: 450 }}>
+                            <ReactECharts
+                              option={{
+                                title: {
+                                  text: 'Scores by commit',
+                                  left: 'center',
+                                  textStyle: { color: 'rgb(241, 245, 249)', fontSize: 14 }
+                                },
+                                tooltip: {
+                                  trigger: 'axis',
+                                  axisPointer: { type: 'shadow' },
+                                  backgroundColor: 'rgba(30, 41, 59, 0.95)',
+                                  borderColor: '#334155',
+                                  textStyle: { color: 'rgb(241, 245, 249)' }
+                                },
+                                legend: {
+                                  data: ['Habitat', 'Suitability', 'Difficulty'],
+                                  top: 28,
+                                  textStyle: { color: 'rgb(148, 163, 184)' }
+                                },
+                                grid: {
+                                  left: '3%',
+                                  right: '4%',
+                                  bottom: '3%',
+                                  top: 60,
+                                  containLabel: true
+                                },
+                                xAxis: {
+                                  type: 'value',
+                                  name: 'Score',
+                                  nameTextStyle: { color: 'rgb(148, 163, 184)' },
+                                  axisLabel: { color: 'rgb(148, 163, 184)' },
+                                  splitLine: { lineStyle: { color: '#334155' } }
+                                },
+                                yAxis: {
+                                  type: 'category',
+                                  data: chainCommitsForChart.map(c => c.label),
+                                  axisLabel: {
+                                    color: 'rgb(148, 163, 184)',
+                                    fontSize: 11,
+                                    width: 80,
+                                    overflow: 'truncate',
+                                    ellipsis: '...'
+                                  }
+                                },
+                                series: [
+                                  {
+                                    name: 'Habitat',
+                                    type: 'bar',
+                                    data: chainCommitsForChart.map(c => c.habitateScore != null ? Number(c.habitateScore) : null),
+                                    itemStyle: { color: '#16a34a' }
+                                  },
+                                  {
+                                    name: 'Suitability',
+                                    type: 'bar',
+                                    data: chainCommitsForChart.map(c => c.suitabilityScore != null ? Number(c.suitabilityScore) : null),
+                                    itemStyle: { color: '#3b82f6' }
+                                  },
+                                  {
+                                    name: 'Difficulty',
+                                    type: 'bar',
+                                    data: chainCommitsForChart.map(c => c.difficultyScore != null ? Number(c.difficultyScore) : null),
+                                    itemStyle: { color: '#f59e0b' }
+                                  }
+                                ],
+                                backgroundColor: 'transparent'
+                              }}
+                              style={{ height: 450, width: '100%' }}
+                              opts={{ renderer: 'svg' }}
+                            />
+                          </div>
+                        ) : (
+                          <div style={{ padding: 24, textAlign: 'center', color: 'rgb(148, 163, 184)', minHeight: 450 }}>
+                            <Text type="secondary">No score data for chain commits</Text>
+                          </div>
+                        )}
+                      </Col>
+                    </Row>
                   )}
                 </Panel>
               </Collapse>

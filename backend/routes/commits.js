@@ -396,7 +396,7 @@ router.get('/commit-chain', requireAdmin, async (req, res, next) => {
       }
       const next = await Commit.findAll({
         where: whereClause,
-        attributes: ['id', 'repoId', 'baseCommit', 'mergedCommit', 'habitateScore', 'message'],
+        attributes: ['id', 'repoId', 'baseCommit', 'mergedCommit', 'habitateScore', 'suitabilityScore', 'difficultyScore', 'message'],
         include: [
           { model: GitRepo, as: 'repo', attributes: ['id', 'repoName', 'fullName'] }
         ]
@@ -453,6 +453,8 @@ router.get('/commit-chain', requireAdmin, async (req, res, next) => {
           baseCommit: commit.baseCommit,
           mergedCommit: commit.mergedCommit,
           habitateScore: commit.habitateScore,
+          suitabilityScore: commit.suitabilityScore,
+          difficultyScore: commit.difficultyScore,
           status: status || null,
           repoName: commit.repo?.fullName || commit.repo?.repoName,
           children: (childNode && childNode.children && childNode.children.length > 0) ? childNode.children : []
@@ -478,14 +480,28 @@ router.get('/commit-chain', requireAdmin, async (req, res, next) => {
     if (!tree) {
       return res.json({
         tree: { name: `${rootLabel} (no merge commits found)`, children: [] },
-        totalNodes: 0
+        totalNodes: 0,
+        chainDepth: 0,
+        totalCommitNodes: 0
       });
     }
 
+    // Total nodes in tree (root + all descendants) - can be many if multiple branches
     const countNodes = (n) => 1 + (n.children || []).reduce((sum, c) => sum + countNodes(c), 0);
     const totalNodes = countNodes(tree);
 
-    res.json({ tree, totalNodes });
+    // Longest path length (root = 1; linear chain root->A->B has chainDepth 3) - matches "commit chain" length
+    const maxChainDepth = (n) => {
+      if (!n.children || n.children.length === 0) return 1;
+      return 1 + Math.max(...n.children.map(maxChainDepth));
+    };
+    const chainDepth = maxChainDepth(tree);
+
+    // Count commit nodes only (exclude root, which has no commitId)
+    const countCommitNodes = (n) => (n.commitId ? 1 : 0) + (n.children || []).reduce((sum, c) => sum + countCommitNodes(c), 0);
+    const totalCommitNodes = countCommitNodes(tree);
+
+    res.json({ tree, totalNodes, chainDepth, totalCommitNodes });
   } catch (error) {
     next(error);
   }
