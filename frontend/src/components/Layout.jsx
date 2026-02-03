@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { Layout as AntLayout, Menu, Avatar, Button, Space, Typography } from 'antd';
+import { Layout as AntLayout, Menu, Avatar, Button, Space, Typography, Dropdown, Badge, Spin, Empty } from 'antd';
 import {
   DashboardOutlined,
   UserOutlined,
@@ -17,8 +17,11 @@ import {
   FileTextOutlined,
   MessageOutlined,
   ToolOutlined,
+  BellOutlined,
+  ClockCircleOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../contexts/AuthContext';
+import api from '../config/api';
 
 const { Header, Sider, Content } = AntLayout;
 const { Text } = Typography;
@@ -28,6 +31,26 @@ const Layout = () => {
   const location = useLocation();
   const { user, logout, isAdmin } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
+  const [expiringCommits, setExpiringCommits] = useState([]);
+  const [notificationsLoading, setNotificationsLoading] = useState(false);
+
+  const fetchExpiringCommits = useCallback(async () => {
+    setNotificationsLoading(true);
+    try {
+      const res = await api.get('/notifications/expiring-commits', { showLoading: false });
+      setExpiringCommits(res.data?.expiringCommits ?? []);
+    } catch {
+      setExpiringCommits([]);
+    } finally {
+      setNotificationsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchExpiringCommits();
+    const interval = setInterval(fetchExpiringCommits, 60 * 1000);
+    return () => clearInterval(interval);
+  }, [fetchExpiringCommits]);
 
   const menuItems = [
     {
@@ -88,6 +111,98 @@ const Layout = () => {
       label: 'Docs',
     },
   ];
+
+  const formatExpiresIn = (expiresAt) => {
+    if (!expiresAt) return '';
+    const ms = new Date(expiresAt) - Date.now();
+    const min = Math.max(0, Math.floor(ms / 60000));
+    if (min < 60) return `Expires in ${min} min`;
+    const h = Math.floor(min / 60);
+    const m = min % 60;
+    return m ? `Expires in ${h}h ${m}m` : `Expires in ${h}h`;
+  };
+
+  const inboxDropdownContent = (
+    <div
+      style={{
+        width: 380,
+        maxHeight: 420,
+        overflow: 'auto',
+        background: '#1e293b',
+        borderRadius: 8,
+        border: '1px solid #334155',
+        boxShadow: '0 6px 16px rgba(0,0,0,0.3)',
+      }}
+    >
+      <div style={{ padding: '12px 16px', borderBottom: '1px solid #334155', color: 'rgb(241, 245, 249)', fontWeight: 600, fontSize: 14 }}>
+        Inbox — expiring soon
+      </div>
+      <div style={{ padding: '8px 0' }}>
+        {notificationsLoading ? (
+          <div style={{ padding: 24, textAlign: 'center' }}>
+            <Spin size="small" />
+          </div>
+        ) : expiringCommits.length === 0 ? (
+          <Empty
+            image={Empty.PRESENTED_IMAGE_SIMPLE}
+            description="No high-value commits expiring soon"
+            style={{ padding: 24, color: 'rgb(148, 163, 184)' }}
+          />
+        ) : (
+          expiringCommits.map((item) => (
+            <div
+              key={`${item.reservationId}-${item.commitId}`}
+              onClick={() => {
+                navigate(`/commits?highlight=${item.commitId || ''}`);
+              }}
+              style={{
+                padding: '10px 16px',
+                borderBottom: '1px solid #334155',
+                cursor: 'pointer',
+                color: 'rgb(241, 245, 249)',
+                fontSize: 12,
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = '#334155';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'transparent';
+              }}
+            >
+              <div style={{ fontWeight: 500, marginBottom: 4 }}>{item.repoName || '—'}</div>
+              <div style={{ color: 'rgb(148, 163, 184)', marginBottom: 2 }}>
+                Base: <code style={{ fontSize: 11 }}>{item.baseCommit?.slice(0, 8) || '—'}</code>
+                {' · '}Expected value: <strong style={{ color: '#f59e0b' }}>{item.expectedValue}</strong>
+              </div>
+              <div style={{ color: 'rgb(148, 163, 184)', fontSize: 11 }}>
+                <ClockCircleOutlined style={{ marginRight: 4 }} />
+                {formatExpiresIn(item.expiresAt)}
+                {item.reservedBy ? ` · Reserved by ${item.reservedBy}` : ''}
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+      {expiringCommits.length > 0 && (
+        <div
+          style={{
+            padding: '8px 16px',
+            borderTop: '1px solid #334155',
+            textAlign: 'center',
+          }}
+        >
+          <Button
+            type="link"
+            size="small"
+            onClick={() => navigate('/commits')}
+            style={{ color: '#16a34a', fontSize: 12 }}
+          >
+            View all commits
+          </Button>
+        </div>
+      )}
+    </div>
+  );
 
   const getPageTitle = () => {
     const findInMenu = (items, path) => {
@@ -179,6 +294,32 @@ const Layout = () => {
             {getPageTitle()}
           </div>
           <Space size={16} align="center">
+            <Dropdown
+              trigger={['click']}
+              dropdownRender={() => inboxDropdownContent}
+              onOpenChange={(open) => open && fetchExpiringCommits()}
+            >
+              <Badge count={expiringCommits.length} size="small" offset={[-2, 2]} showZero={false}>
+                <Button
+                  type="text"
+                  icon={<BellOutlined />}
+                  style={{
+                    color: 'rgb(241, 245, 249)',
+                    width: 40,
+                    height: 40,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = '#334155';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'transparent';
+                  }}
+                />
+              </Badge>
+            </Dropdown>
             <Space size={12} align="center">
               <Avatar 
                 size={36}
