@@ -14,16 +14,12 @@ router.use(authenticateToken);
 // Get commits with filtering
 router.get('/', commitFilterRules, paginationRules, handleValidationErrors, async (req, res, next) => {
   try {
-    // Optimize MySQL sort buffer for large dataset sorting
-    // Set session variables to increase sort buffer size (16MB instead of default 256KB)
     try {
-      await sequelize.query(`
-        SET SESSION sort_buffer_size = 16777216;
-        SET SESSION read_buffer_size = 2097152;
-        SET SESSION read_rnd_buffer_size = 4194304;
-      `, { type: sequelize.QueryTypes.RAW });
+      // Execute SET statements separately to avoid syntax errors
+      await sequelize.query('SET SESSION sort_buffer_size = 67108864', { type: sequelize.QueryTypes.RAW });
+      await sequelize.query('SET SESSION read_buffer_size = 4194304', { type: sequelize.QueryTypes.RAW });
+      await sequelize.query('SET SESSION read_rnd_buffer_size = 8388608', { type: sequelize.QueryTypes.RAW });
     } catch (optError) {
-      // If setting session variables fails, log but continue
       console.warn('Failed to set MySQL optimization variables:', optError.message);
     }
 
@@ -116,6 +112,35 @@ router.get('/', commitFilterRules, paginationRules, handleValidationErrors, asyn
     }
     if (req.query.is_behavior_preserving_refactor !== undefined) {
       where.isBehaviorPreservingRefactor = req.query.is_behavior_preserving_refactor === 'true';
+    }
+
+    // Filter by display status (server-side so we can paginate correctly)
+    const allowedDisplayStatuses = ['reserved', 'available', 'paid_out', 'unavailable', 'too_easy', 'already_reserved', 'in_distribution', 'pending_admin_approval', 'failed', 'error'];
+    const displayStatus = (req.query.display_status || req.query.status || '').trim().toLowerCase();
+    if (displayStatus && allowedDisplayStatuses.includes(displayStatus)) {
+      const userId = parseInt(req.userId, 10);
+      if (displayStatus === 'reserved') {
+        where.id = {
+          [Op.in]: sequelize.literal(`(SELECT commit_id FROM reservations WHERE user_id = ${userId} AND status = 'reserved')`)
+        };
+      } else if (displayStatus === 'available') {
+        const existingWhere = { ...where };
+        where[Op.and] = [
+          existingWhere,
+          { id: { [Op.notIn]: sequelize.literal(`(SELECT commit_id FROM reservations WHERE user_id = ${userId} AND status = 'reserved')`) } },
+          {
+            [Op.or]: [
+              { id: { [Op.notIn]: sequelize.literal(`(SELECT commit_id FROM commit_status_cache)`) } },
+              { id: { [Op.in]: sequelize.literal(`(SELECT commit_id FROM commit_status_cache WHERE status = 'available')`) } }
+            ]
+          }
+        ];
+      } else {
+        // paid_out, unavailable, too_easy, etc.
+        where.id = {
+          [Op.in]: sequelize.literal(`(SELECT commit_id FROM commit_status_cache WHERE status = '${displayStatus.replace(/'/g, "''")}')`)
+        };
+      }
     }
 
     const include = [
@@ -251,7 +276,29 @@ router.get('/', commitFilterRules, paginationRules, handleValidationErrors, asyn
       console.warn(`Large offset detected: ${offset}. This may cause sort memory issues.`);
     }
 
-    const commits = await Commit.findAll(queryOptions);
+    // Execute query with retry logic for sort memory errors
+    let commits;
+    try {
+      commits = await Commit.findAll(queryOptions);
+    } catch (error) {
+      // If sort memory error, try with even larger buffer and retry once
+      if (error.name === 'SequelizeDatabaseError' && 
+          (error.parent?.code === 'ER_OUT_OF_SORTMEMORY' || error.parent?.errno === 1038)) {
+        console.warn('[Commits] Sort memory error detected, retrying with larger buffer (128MB)...');
+        try {
+          // Execute SET statements separately to avoid syntax errors
+          await sequelize.query('SET SESSION sort_buffer_size = 134217728', { type: sequelize.QueryTypes.RAW });
+          await sequelize.query('SET SESSION read_buffer_size = 8388608', { type: sequelize.QueryTypes.RAW });
+          await sequelize.query('SET SESSION read_rnd_buffer_size = 16777216', { type: sequelize.QueryTypes.RAW });
+          commits = await Commit.findAll(queryOptions);
+        } catch (retryError) {
+          console.error('[Commits] Retry failed, returning error:', retryError.message);
+          throw retryError;
+        }
+      } else {
+        throw error;
+      }
+    }
 
     // Get user's accounts to fetch status cache
     const userAccounts = await UserHabitatAccount.findAll({

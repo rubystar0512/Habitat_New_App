@@ -71,7 +71,9 @@ const commitFilterRules = [
   query('single_file_200plus').optional().isBoolean(),
   query('multi_file_300plus').optional().isBoolean(),
   query('sort_field').optional().isString(),
-  query('sort_order').optional().isIn(['ASC', 'DESC'])
+  query('sort_order').optional().isIn(['ASC', 'DESC']),
+  query('display_status').optional().isIn(['reserved', 'available', 'paid_out', 'unavailable', 'too_easy', 'already_reserved', 'in_distribution', 'pending_admin_approval', 'failed', 'error']),
+  query('status').optional().isIn(['reserved', 'available', 'paid_out', 'unavailable', 'too_easy', 'already_reserved', 'in_distribution', 'pending_admin_approval', 'failed', 'error'])
 ];
 
 // Reservation validations

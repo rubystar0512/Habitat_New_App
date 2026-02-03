@@ -190,14 +190,16 @@ const CommitsTable = () => {
         sort_order: sortOrder,
       };
 
-      // Add all filters (except status, which is filtered client-side)
+      // Add all filters (status is now filtered server-side via display_status)
       Object.keys(filters).forEach(key => {
         const value = filters[key];
         if (key === 'repo_ids') return; // handled below
-        if (value !== null && value !== '' && value !== false && key !== 'status') {
+        if (value !== null && value !== '' && value !== false) {
           if (key === 'date_range' && value && value.length === 2) {
             params.date_from = value[0].format('YYYY-MM-DD');
             params.date_to = value[1].format('YYYY-MM-DD');
+          } else if (key === 'status') {
+            params.display_status = value; // Server-side filter
           } else if (key !== 'date_range') {
             params[key] = value;
           }
@@ -207,31 +209,9 @@ const CommitsTable = () => {
         params.repo_ids = filters.repo_ids;
       }
 
-      // If status filter is active, fetch more records for client-side filtering
-      if (filters.status) {
-        params.limit = 10000; // Fetch large number for client-side filtering
-        params.offset = 0;
-      }
-
       const response = await api.get('/commits', { params });
-      let commitsData = response.data.commits || [];
-      
-      // Client-side filtering by status (since status is computed from multiple sources)
-      if (filters.status) {
-        commitsData = commitsData.filter(commit => {
-          const displayStatus = commit.displayStatus || 'available';
-          return displayStatus === filters.status;
-        });
-        // Update total for client-side filtered results
-        setTotal(commitsData.length);
-        // Apply pagination to filtered results
-        const start = (pagination.current - 1) * pagination.pageSize;
-        const end = start + pagination.pageSize;
-        commitsData = commitsData.slice(start, end);
-      } else {
-        setTotal(response.data.total || 0);
-      }
-      
+      const commitsData = response.data.commits || [];
+      setTotal(response.data.total || 0);
       setCommits(commitsData);
     } catch (error) {
       message.error('Failed to fetch commits');

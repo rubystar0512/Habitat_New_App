@@ -96,7 +96,6 @@ class CommitStatusCronService {
       const repos = await GitRepo.findAll({
         where: {
           habitatRepoId: { [require('sequelize').Op.not]: null },
-          isActive: true
         },
         attributes: ['id', 'habitatRepoId', 'repoName', 'fullName']
       });
