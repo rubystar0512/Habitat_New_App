@@ -1,6 +1,6 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import { ConfigProvider } from 'antd';
+import { ConfigProvider, App as AntApp } from 'antd';
 import App from './App';
 import { appTheme } from './config/theme';
 import './index.css';
@@ -8,7 +8,9 @@ import './index.css';
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <ConfigProvider theme={appTheme}>
-      <App />
+      <AntApp>
+        <App />
+      </AntApp>
     </ConfigProvider>
   </React.StrictMode>
 );

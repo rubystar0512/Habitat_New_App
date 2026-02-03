@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { Layout as AntLayout, Menu, Avatar, Button, Space, Typography, Dropdown, Badge, Spin, Empty } from 'antd';
+import { Layout as AntLayout, Menu, Avatar, Button, Space, Typography, Dropdown, Badge, Spin, Empty, notification } from 'antd';
 import {
   DashboardOutlined,
   UserOutlined,
@@ -32,15 +32,20 @@ const Layout = () => {
   const { user, logout, isAdmin } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
   const [expiringCommits, setExpiringCommits] = useState([]);
+  const [myExpiringReservations, setMyExpiringReservations] = useState([]);
   const [notificationsLoading, setNotificationsLoading] = useState(false);
+  const lastNotifiedMyExpiringTimeRef = useRef(0); // Last time we showed "reservation expiring soon" (for periodic repeat)
+  const NOTIFY_REPEAT_MINUTES = 2; // Re-notify every 2 min while reservations are still expiring
 
   const fetchExpiringCommits = useCallback(async () => {
     setNotificationsLoading(true);
     try {
       const res = await api.get('/notifications/expiring-commits', { showLoading: false });
       setExpiringCommits(res.data?.expiringCommits ?? []);
+      setMyExpiringReservations(res.data?.myExpiringReservations ?? []);
     } catch {
       setExpiringCommits([]);
+      setMyExpiringReservations([]);
     } finally {
       setNotificationsLoading(false);
     }
@@ -51,6 +56,57 @@ const Layout = () => {
     const interval = setInterval(fetchExpiringCommits, 60 * 1000);
     return () => clearInterval(interval);
   }, [fetchExpiringCommits]);
+
+  // Alert periodically when your reservations expire within 30 min (re-notify every NOTIFY_REPEAT_MINUTES).
+  useEffect(() => {
+    const checkMyReservationsExpiring = async () => {
+      try {
+        const res = await api.get('/notifications/my-reservations-expiring-soon', { showLoading: false });
+        const list = res.data?.expiringReservations ?? [];
+        if (list.length === 0) {
+          lastNotifiedMyExpiringTimeRef.current = 0;
+          return;
+        }
+        const now = Date.now();
+        const repeatMs = NOTIFY_REPEAT_MINUTES * 60 * 1000;
+        if (lastNotifiedMyExpiringTimeRef.current > 0 && now - lastNotifiedMyExpiringTimeRef.current < repeatMs) {
+          return; // Already notified recently; wait until next period
+        }
+        lastNotifiedMyExpiringTimeRef.current = now;
+
+        const count = list.length;
+        const first = list[0];
+        const title = count === 1 ? 'Reservation expiring soon' : `${count} reservations expiring soon`;
+        const description =
+          count === 1
+            ? `${first.repoName || 'Commit'} — base ${first.baseCommit?.slice(0, 8) || '?'}`
+            : `You have ${count} reserved commits expiring within 30 min. Open Reservations to renew or complete.`;
+
+        notification.warning({
+          message: title,
+          description,
+          placement: 'topRight',
+          duration: 10,
+          key: `my-reservation-expiring-${now}`,
+          onClick: () => navigate('/reservations'),
+        });
+
+        if (typeof Notification !== 'undefined') {
+          if (Notification.permission === 'granted') {
+            try {
+              new Notification(title, { body: description, icon: '/assets/icon_128x128.png' });
+            } catch (_) {}
+          } else if (Notification.permission === 'default') {
+            Notification.requestPermission?.();
+          }
+        }
+      } catch (_) {}
+    };
+
+    checkMyReservationsExpiring();
+    const interval = setInterval(checkMyReservationsExpiring, 2 * 60 * 1000); // every 2 min
+    return () => clearInterval(interval);
+  }, [navigate]);
 
   const menuItems = [
     {
@@ -142,48 +198,79 @@ const Layout = () => {
           <div style={{ padding: 24, textAlign: 'center' }}>
             <Spin size="small" />
           </div>
-        ) : expiringCommits.length === 0 ? (
+        ) : myExpiringReservations.length === 0 && expiringCommits.length === 0 ? (
           <Empty
             image={Empty.PRESENTED_IMAGE_SIMPLE}
-            description="No high-value commits expiring soon"
+            description="No commits or reservations expiring soon"
             style={{ padding: 24, color: 'rgb(148, 163, 184)' }}
           />
         ) : (
-          expiringCommits.map((item) => (
-            <div
-              key={`${item.reservationId}-${item.commitId}`}
-              onClick={() => {
-                navigate(`/commits?highlight=${item.commitId || ''}`);
-              }}
-              style={{
-                padding: '10px 16px',
-                borderBottom: '1px solid #334155',
-                cursor: 'pointer',
-                color: 'rgb(241, 245, 249)',
-                fontSize: 12,
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = '#334155';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = 'transparent';
-              }}
-            >
-              <div style={{ fontWeight: 500, marginBottom: 4 }}>{item.repoName || '—'}</div>
-              <div style={{ color: 'rgb(148, 163, 184)', marginBottom: 2 }}>
-                Base: <code style={{ fontSize: 11 }}>{item.baseCommit?.slice(0, 8) || '—'}</code>
-                {' · '}Expected value: <strong style={{ color: '#f59e0b' }}>{item.expectedValue}</strong>
-              </div>
-              <div style={{ color: 'rgb(148, 163, 184)', fontSize: 11 }}>
-                <ClockCircleOutlined style={{ marginRight: 4 }} />
-                {formatExpiresIn(item.expiresAt)}
-                {item.reservedBy ? ` · Reserved by ${item.reservedBy}` : ''}
-              </div>
-            </div>
-          ))
+          <>
+            {myExpiringReservations.length > 0 && (
+              <>
+                <div style={{ padding: '8px 16px', color: 'rgb(148, 163, 184)', fontSize: 11, fontWeight: 600 }}>
+                  Your reservations (expiring in 30 min)
+                </div>
+                {myExpiringReservations.map((item) => (
+                  <div
+                    key={`my-${item.reservationId}`}
+                    onClick={() => navigate('/reservations')}
+                    style={{
+                      padding: '10px 16px',
+                      borderBottom: '1px solid #334155',
+                      cursor: 'pointer',
+                      color: 'rgb(241, 245, 249)',
+                      fontSize: 12,
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = '#334155'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                  >
+                    <div style={{ fontWeight: 500, marginBottom: 4 }}>{item.repoName || '—'}</div>
+                    <div style={{ color: 'rgb(148, 163, 184)', fontSize: 11 }}>
+                      <ClockCircleOutlined style={{ marginRight: 4 }} />
+                      {formatExpiresIn(item.expiresAt)} · Base: <code style={{ fontSize: 11 }}>{item.baseCommit?.slice(0, 8) || '—'}</code>
+                    </div>
+                  </div>
+                ))}
+              </>
+            )}
+            {expiringCommits.length > 0 && (
+              <>
+                <div style={{ padding: '8px 16px', color: 'rgb(148, 163, 184)', fontSize: 11, fontWeight: 600 }}>
+                  Others&apos; high-value commits (expiring in 2h)
+                </div>
+                {expiringCommits.map((item) => (
+                  <div
+                    key={`${item.reservationId}-${item.commitId}`}
+                    onClick={() => navigate(`/commits?highlight=${item.commitId || ''}`)}
+                    style={{
+                      padding: '10px 16px',
+                      borderBottom: '1px solid #334155',
+                      cursor: 'pointer',
+                      color: 'rgb(241, 245, 249)',
+                      fontSize: 12,
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = '#334155'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                  >
+                    <div style={{ fontWeight: 500, marginBottom: 4 }}>{item.repoName || '—'}</div>
+                    <div style={{ color: 'rgb(148, 163, 184)', marginBottom: 2 }}>
+                      Base: <code style={{ fontSize: 11 }}>{item.baseCommit?.slice(0, 8) || '—'}</code>
+                      {' · '}Expected value: <strong style={{ color: '#f59e0b' }}>{item.expectedValue}</strong>
+                    </div>
+                    <div style={{ color: 'rgb(148, 163, 184)', fontSize: 11 }}>
+                      <ClockCircleOutlined style={{ marginRight: 4 }} />
+                      {formatExpiresIn(item.expiresAt)}
+                      {item.reservedBy ? ` · Reserved by ${item.reservedBy}` : ''}
+                    </div>
+                  </div>
+                ))}
+              </>
+            )}
+          </>
         )}
       </div>
-      {expiringCommits.length > 0 && (
+      {(myExpiringReservations.length > 0 || expiringCommits.length > 0) && (
         <div
           style={{
             padding: '8px 16px',
@@ -299,7 +386,7 @@ const Layout = () => {
               dropdownRender={() => inboxDropdownContent}
               onOpenChange={(open) => open && fetchExpiringCommits()}
             >
-              <Badge count={expiringCommits.length} size="small" offset={[-2, 2]} showZero={false}>
+              <Badge count={expiringCommits.length + myExpiringReservations.length} size="small" offset={[-2, 2]} showZero={false}>
                 <Button
                   type="text"
                   icon={<BellOutlined />}
