@@ -95,7 +95,8 @@ class CommitStatusCronService {
       // Get all repos that have a habitat_repo_id
       const repos = await GitRepo.findAll({
         where: {
-          habitatRepoId: { [require('sequelize').Op.not]: null }
+          habitatRepoId: { [require('sequelize').Op.not]: null },
+          isActive: true
         },
         attributes: ['id', 'habitatRepoId', 'repoName', 'fullName']
       });
@@ -127,7 +128,6 @@ class CommitStatusCronService {
    */
   async fetchCommitStatusesForRepo(account, repo, apiUrl) {
     try {
-      // Call Habitat API to get unavailable commits
       const result = await habitatApi.getUnavailableCommits(
         account.apiToken,
         apiUrl,
@@ -139,16 +139,12 @@ class CommitStatusCronService {
         return 0;
       }
 
-      // Parse the CSV response (Habitat API returns CSV)
       const unavailableCommits = this.parseUnavailableCommitsCSV(result.commits || result.data || '');
 
       if (unavailableCommits.size === 0) {
-        // No unavailable commits returned from API - don't save anything
         return 0;
       }
 
-      // Only save status for commits that are returned from the API (unavailable commits)
-      // Get commits that match the unavailable commits from API
       const commitHashes = Array.from(unavailableCommits.keys());
       
       const commits = await Commit.findAll({
@@ -159,38 +155,71 @@ class CommitStatusCronService {
         attributes: ['id', 'baseCommit']
       });
 
-      // Get commit IDs that should have status (from API response)
       const commitIdsToKeep = new Set(commits.map(c => c.id));
 
-      // Remove old cache entries for commits in this repo that are no longer unavailable
-      // (i.e., they were previously unavailable but are now available/not in API response)
-      const allRepoCommits = await Commit.findAll({
-        where: { repoId: repo.id },
-        attributes: ['id']
-      });
-      const allRepoCommitIds = allRepoCommits.map(c => c.id);
-      const commitIdsToRemove = allRepoCommitIds.filter(id => !commitIdsToKeep.has(id));
-
-      if (commitIdsToRemove.length > 0) {
-        await CommitStatusCache.destroy({
-          where: {
-            commitId: { [require('sequelize').Op.in]: commitIdsToRemove }
-          }
+      const { Op } = require('sequelize');
+      const { sequelize } = require('../config/database');
+      
+      let results = [];
+      if (commitIdsToKeep.size > 0) {
+        results = await sequelize.query(`
+          SELECT csc.commit_id
+          FROM commit_status_cache csc
+          INNER JOIN commits c ON c.id = csc.commit_id
+          WHERE c.repo_id = :repoId
+            AND csc.commit_id NOT IN (:commitIdsToKeep)
+        `, {
+          replacements: {
+            repoId: repo.id,
+            commitIdsToKeep: Array.from(commitIdsToKeep)
+          },
+          type: sequelize.QueryTypes.SELECT
         });
+      } else {
+        results = await sequelize.query(`
+          SELECT csc.commit_id
+          FROM commit_status_cache csc
+          INNER JOIN commits c ON c.id = csc.commit_id
+          WHERE c.repo_id = :repoId
+        `, {
+          replacements: {
+            repoId: repo.id
+          },
+          type: sequelize.QueryTypes.SELECT
+        });
+      }
+
+      const commitIdsToMarkAvailable = results.map(r => r.commit_id);
+
+      if (commitIdsToMarkAvailable.length > 0) {
+        const BATCH_SIZE = 1000;
+        for (let i = 0; i < commitIdsToMarkAvailable.length; i += BATCH_SIZE) {
+          const batch = commitIdsToMarkAvailable.slice(i, i + BATCH_SIZE);
+          await CommitStatusCache.update(
+            {
+              status: 'available',
+              expiresAt: null, 
+              checkedAt: new Date()
+            },
+            {
+              where: {
+                commitId: { [Op.in]: batch }
+              }
+            }
+          );
+        }
+        console.log(`[CommitStatusCron] Marked ${commitIdsToMarkAvailable.length} commits as available for repo ${repo.id}`);
       }
 
       let updatedCount = 0;
 
-      // Only save status for commits returned from Habitat API
       for (const commit of commits) {
         const statusInfo = unavailableCommits.get(commit.baseCommit);
 
         if (statusInfo) {
-          // Commit is unavailable - save status from API
           const apiStatus = (statusInfo.status || '').trim().toLowerCase();
           const expiresAt = statusInfo.expires_at ? new Date(statusInfo.expires_at) : null;
 
-          // Map statuses for consistency and handle unknown statuses
           const statusMap = {
             'reserved': 'already_reserved',
             'in_distribution': 'in_distribution',
@@ -202,19 +231,16 @@ class CommitStatusCronService {
             'error': 'error'
           };
 
-          // Use mapped status or fallback to 'unavailable' if status is unknown
           const mappedStatus = statusMap[apiStatus] || 'unavailable';
 
-          // Upsert status cache (global per commit, no account_id needed)
-          // Only save commits that are returned from API
           await CommitStatusCache.upsert({
             commitId: commit.id,
-            accountId: null, // Status is global, not per account
+            accountId: null, 
             status: mappedStatus,
             expiresAt: expiresAt,
             checkedAt: new Date()
           }, {
-            conflictFields: ['commit_id'] // One status per commit
+            conflictFields: ['commit_id'] 
           });
 
           updatedCount++;
