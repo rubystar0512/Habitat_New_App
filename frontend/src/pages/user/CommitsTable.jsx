@@ -88,6 +88,10 @@ const CommitsTable = () => {
   const [receiverAccounts, setReceiverAccounts] = useState([]);
   const [teamMembers, setTeamMembers] = useState([]);
   const [giftLoading, setGiftLoading] = useState(false);
+  const [selectedCommitRowKeys, setSelectedCommitRowKeys] = useState([]);
+  const [bulkReserveModalVisible, setBulkReserveModalVisible] = useState(false);
+  const [bulkReserveAccountId, setBulkReserveAccountId] = useState(null);
+  const [bulkReserveLoading, setBulkReserveLoading] = useState(false);
 
   // Column visibility state - load from localStorage or use defaults
   const [visibleColumns, setVisibleColumns] = useState(() => {
@@ -522,6 +526,43 @@ const CommitsTable = () => {
       message.error(error.response?.data?.error || 'Failed to reserve commit');
     } finally {
       setActionLoading({ ...actionLoading, [`reserve-${selectedCommit.id}`]: false });
+    }
+  };
+
+  const handleBulkReserve = () => {
+    if (selectedCommitRowKeys.length === 0) {
+      message.warning('Select at least one commit');
+      return;
+    }
+    const firstActive = accounts.find(a => a.isActive && a.accountHealth !== 'exhausted' && a.accountHealth !== 'error');
+    setBulkReserveAccountId(firstActive?.id ?? null);
+    setBulkReserveModalVisible(true);
+  };
+
+  const handleBulkReserveConfirm = async () => {
+    if (!bulkReserveAccountId) {
+      message.error('Select an account');
+      return;
+    }
+    setBulkReserveLoading(true);
+    try {
+      const res = await api.post('/reservations/bulk', {
+        account_id: bulkReserveAccountId,
+        commit_ids: selectedCommitRowKeys,
+      });
+      message.success(res.data.message || `Reserved ${res.data.reserved} of ${selectedCommitRowKeys.length}`);
+      setBulkReserveModalVisible(false);
+      setSelectedCommitRowKeys([]);
+      fetchCommits();
+      fetchMyStats();
+      if (res.data.failed > 0 && res.data.results?.failed?.length) {
+        const firstFew = res.data.results.failed.slice(0, 3).map(f => f.error).join('; ');
+        message.warning(`${res.data.failed} failed: ${firstFew}${res.data.results.failed.length > 3 ? '...' : ''}`);
+      }
+    } catch (err) {
+      message.error(err.response?.data?.error || 'Bulk reserve failed');
+    } finally {
+      setBulkReserveLoading(false);
     }
   };
 
@@ -1329,7 +1370,24 @@ const CommitsTable = () => {
               </Button>
             )}
 
+            <Button
+              type="primary"
+              icon={<CheckCircleOutlined />}
+              onClick={handleBulkReserve}
+              disabled={selectedCommitRowKeys.length === 0}
+              style={{ marginBottom: 16 }}
+            >
+              Reserve selected ({selectedCommitRowKeys.length})
+            </Button>
+
         <Table
+          rowSelection={{
+            selectedRowKeys: selectedCommitRowKeys,
+            onChange: (keys) => setSelectedCommitRowKeys(keys),
+            getCheckboxProps: (record) => ({
+              disabled: record.displayStatus === 'already_reserved' || record.displayStatus === 'unavailable' || (record.userReservation && record.userReservation.status === 'reserved'),
+            }),
+          }}
           columns={columns}
           dataSource={commits}
           rowKey="id"
@@ -1356,6 +1414,36 @@ const CommitsTable = () => {
           </Card>
         </Col>
       </Row>
+
+      <Modal
+        title="Reserve selected commits"
+        open={bulkReserveModalVisible}
+        onOk={handleBulkReserveConfirm}
+        onCancel={() => setBulkReserveModalVisible(false)}
+        okText="Reserve"
+        cancelText="Cancel"
+        confirmLoading={bulkReserveLoading}
+      >
+        <Space direction="vertical" style={{ width: '100%' }}>
+          <Text>Account to use for reservation:</Text>
+          <Select
+            size="large"
+            style={{ width: '100%' }}
+            placeholder="Select an account"
+            value={bulkReserveAccountId}
+            onChange={setBulkReserveAccountId}
+          >
+            {accounts
+              .filter(acc => acc.isActive && acc.accountHealth !== 'exhausted' && acc.accountHealth !== 'error')
+              .map(account => (
+                <Option key={account.id} value={account.id}>
+                  {account.accountName} ({account.remainingReversals ?? '?'} remaining)
+                </Option>
+              ))}
+          </Select>
+          <Text type="secondary">{selectedCommitRowKeys.length} commit(s) selected.</Text>
+        </Space>
+      </Modal>
 
       <Modal
         title="Reserve Commit"

@@ -16,7 +16,6 @@ import AccountManagement from './pages/user/AccountManagement';
 import CommitsTable from './pages/user/CommitsTable';
 import MemoManagement from './pages/user/MemoManagement';
 import ReservationsTable from './pages/user/ReservationsTable';
-import ReservationCron from './pages/user/ReservationCron';
 import XMLViewer from './pages/user/XMLViewer';
 import SuccessfulTasks from './pages/SuccessfulTasks';
 import Statistics from './pages/Statistics';
@@ -75,7 +74,6 @@ function App() {
             <Route path="commits" element={<CommitsTable />} />
             <Route path="memo" element={<MemoManagement />} />
             <Route path="reservations" element={<ReservationsTable />} />
-            <Route path="reservation-cron" element={<ReservationCron />} />
             <Route path="xml-viewer" element={<XMLViewer />} />
             
             {/* Common routes */}

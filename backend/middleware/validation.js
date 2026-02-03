@@ -78,8 +78,15 @@ const commitFilterRules = [
 
 // Reservation validations
 const createReservationRules = [
-  body('commit_id').isInt({ min: 1 }).withMessage('Valid commit_id is required'),
-  body('account_id').isInt({ min: 1 }).withMessage('Valid account_id is required')
+  body('commit_id').optional().isInt({ min: 1 }),
+  body('account_id').isInt({ min: 1 }).withMessage('Valid account_id is required'),
+  body('commit_ids').optional().isArray(),
+  body('commit_ids.*').optional().isInt({ min: 1 })
+];
+const bulkReservationRules = [
+  body('account_id').isInt({ min: 1 }).withMessage('Valid account_id is required'),
+  body('commit_ids').isArray({ min: 1 }).withMessage('commit_ids array is required'),
+  body('commit_ids.*').isInt({ min: 1 }).withMessage('Each commit_id must be a positive integer')
 ];
 
 // Successful task validations
@@ -105,5 +112,6 @@ module.exports = {
   registerRules,
   commitFilterRules,
   createReservationRules,
+  bulkReservationRules,
   createSuccessfulTaskRules
 };

@@ -135,7 +135,6 @@ const Layout = () => {
         { key: '/commits', icon: <TableOutlined />, label: 'Commits' },
         { key: '/memo', icon: <BookOutlined />, label: 'Memo' },
         { key: '/reservations', icon: <CheckCircleOutlined />, label: 'Reservations' },
-        { key: '/reservation-cron', icon: <ThunderboltOutlined />, label: 'Auto Reservation' },
       ],
     },
     {

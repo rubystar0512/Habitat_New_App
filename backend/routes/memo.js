@@ -1,6 +1,6 @@
 const express = require('express');
 const { Op } = require('sequelize');
-const { MemoCommit, Commit, GitRepo } = require('../models');
+const { MemoCommit, Commit, GitRepo, CommitStatusCache, Reservation } = require('../models');
 const { authenticateToken } = require('../middleware/auth');
 const { idParamRule, paginationRules, handleValidationErrors } = require('../middleware/validation');
 const { computePriorityFromCommit } = require('../services/priorityCalculator');
@@ -38,9 +38,41 @@ router.get('/', paginationRules, handleValidationErrors, async (req, res, next) 
       order: [['priority', 'DESC'], ['createdAt', 'DESC']]
     });
 
-    // Format response to include commit details
+    const commitIds = memoCommits.map(m => m.commitId).filter(Boolean);
+    const [statusRows, reservations] = await Promise.all([
+      commitIds.length ? CommitStatusCache.findAll({
+        where: { commitId: { [Op.in]: commitIds } },
+        attributes: ['commitId', 'status', 'expiresAt', 'checkedAt']
+      }) : [],
+      commitIds.length ? Reservation.findAll({
+        where: { userId: req.userId, commitId: { [Op.in]: commitIds }, status: 'reserved' },
+        attributes: ['commitId', 'status', 'expiresAt', 'id', 'accountId']
+      }) : []
+    ]);
+
+    const statusMap = {};
+    statusRows.forEach(sc => {
+      statusMap[sc.commitId] = { status: sc.status, expiresAt: sc.expiresAt, checkedAt: sc.checkedAt };
+    });
+    const reservationMap = {};
+    reservations.forEach(r => {
+      reservationMap[r.commitId] = { id: r.id, status: r.status, expiresAt: r.expiresAt, accountId: r.accountId };
+    });
+
+    // Format response to include commit details and commit status
     const formattedMemos = memoCommits.map(memo => {
       const commit = memo.commit;
+      const statusInfo = statusMap[memo.commitId];
+      const userReservation = reservationMap[memo.commitId];
+      let displayStatus = 'available';
+      let expiresAt = null;
+      if (userReservation) {
+        displayStatus = 'reserved';
+        expiresAt = userReservation.expiresAt;
+      } else if (statusInfo) {
+        displayStatus = statusInfo.status || 'available';
+        expiresAt = statusInfo.expiresAt;
+      }
       return {
         id: memo.id,
         userId: memo.userId,
@@ -50,6 +82,8 @@ router.get('/', paginationRules, handleValidationErrors, async (req, res, next) 
         notes: memo.notes,
         createdAt: memo.createdAt,
         updatedAt: memo.updatedAt,
+        displayStatus,
+        expiresAt,
         // Commit details
         repo_id: commit?.repoId,
         repo_name: commit?.repo?.fullName || commit?.repo?.repoName,

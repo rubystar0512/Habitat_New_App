@@ -10,7 +10,6 @@ import {
   BookOutlined,
   CheckCircleOutlined,
   BarChartOutlined,
-  ThunderboltOutlined,
   TrophyOutlined,
   InfoCircleOutlined,
   CheckCircleFilled,
@@ -591,54 +590,6 @@ const UserGuide = () => {
                           </Space>
                         ),
                       },
-                      {
-                        key: 'auto-reservation',
-                        label: (
-                          <Space>
-                            <ThunderboltOutlined style={{ color: '#16a34a' }} />
-                            <Text strong style={{ color: '#f1f5f9', fontSize: 15 }}>
-                              Auto Reservation
-                            </Text>
-                            <Tag color="blue" style={{ marginLeft: 8 }}>Automated</Tag>
-                          </Space>
-                        ),
-                        children: (
-                          <Space direction="vertical" size="middle" style={{ width: '100%', paddingLeft: 24 }}>
-                            <Paragraph style={{ color: '#cbd5e1', margin: 0 }}>
-                              Automatically reserve commits based on your configured criteria. Set up rules and let the system handle reservations for you.
-                            </Paragraph>
-                            <List
-                              size="small"
-                              dataSource={[
-                                'Configure automatic reservation rules',
-                                'Set filters for commits to auto-reserve',
-                                'Schedule reservation times',
-                                'Monitor auto-reservation activity',
-                              ]}
-                              renderItem={(item) => (
-                                <List.Item style={{ border: 'none', padding: '6px 0' }}>
-                                  <Space>
-                                    <CheckCircleFilled style={{ color: '#16a34a', fontSize: 12 }} />
-                                    <Text style={{ color: '#94a3b8', fontSize: 13 }}>{item}</Text>
-                                  </Space>
-                                </List.Item>
-                              )}
-                            />
-                            <Alert
-                              message="Automation"
-                              description="Auto Reservation runs in the background and will automatically reserve commits that match your criteria."
-                              type="info"
-                              showIcon
-                              style={{
-                                background: '#1e3a5f',
-                                border: '1px solid #3b82f6',
-                                marginTop: 12,
-                                borderRadius: 8,
-                              }}
-                            />
-                          </Space>
-                        ),
-                      },
                     ]}
                     style={{ background: 'transparent' }}
                   />
@@ -1093,7 +1044,7 @@ const UserGuide = () => {
                     'Keep your Habitat accounts healthy by monitoring their status regularly',
                     'Submit successful tasks promptly to maintain accurate statistics',
                     'Use memos to track important information about commits',
-                    'Set up auto-reservation rules to save time on manual reservations',
+                    'Use bulk reserve on Commits or Memo to reserve multiple commits at once',
                     'Check the Statistics page regularly to track your progress',
                     'Use the per-repository score distribution chart to find suitable commits',
                     'Use Markdown in task descriptions for better formatting',

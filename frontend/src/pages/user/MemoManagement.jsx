@@ -28,9 +28,13 @@ import {
   ClearOutlined,
   ThunderboltOutlined,
   CheckCircleOutlined,
+  ClockCircleOutlined,
 } from '@ant-design/icons';
 import api from '../../config/api';
 import dayjs from 'dayjs';
+import relativeTime from 'dayjs/plugin/relativeTime';
+
+dayjs.extend(relativeTime);
 
 const { Title, Text } = Typography;
 const { Option } = Select;
@@ -58,6 +62,10 @@ const MemoManagement = () => {
   const [memoLimit, setMemoLimit] = useState(null);
   const [repoWinRates, setRepoWinRates] = useState([]);
   const [priorityUpdating, setPriorityUpdating] = useState({});
+  const [selectedRowKeys, setSelectedRowKeys] = useState([]);
+  const [bulkReserveModalVisible, setBulkReserveModalVisible] = useState(false);
+  const [bulkReserveAccountId, setBulkReserveAccountId] = useState(null);
+  const [bulkReserveLoading, setBulkReserveLoading] = useState(false);
 
   useEffect(() => {
     fetchMemoCommits();
@@ -140,6 +148,50 @@ const MemoManagement = () => {
       notes: memo.notes || '',
     });
     setEditModalVisible(true);
+  };
+
+  const handleBulkReserve = () => {
+    if (selectedRowKeys.length === 0) {
+      message.warning('Select at least one memo commit');
+      return;
+    }
+    setBulkReserveAccountId(accounts.find(a => a.isActive)?.id ?? null);
+    setBulkReserveModalVisible(true);
+  };
+
+  const handleBulkReserveConfirm = async () => {
+    if (!bulkReserveAccountId) {
+      message.error('Select an account');
+      return;
+    }
+    const commitIds = selectedRowKeys.map(key => {
+      const row = memoCommits.find(m => m.id === key);
+      return row?.commitId ?? row?.commit_id;
+    }).filter(Boolean);
+    if (commitIds.length === 0) {
+      message.error('No valid commits selected');
+      return;
+    }
+    setBulkReserveLoading(true);
+    try {
+      const res = await api.post('/reservations/bulk', {
+        account_id: bulkReserveAccountId,
+        commit_ids: commitIds,
+      });
+      const { reserved, failed, results } = res.data;
+      message.success(res.data.message || `Reserved ${reserved} of ${commitIds.length}`);
+      setBulkReserveModalVisible(false);
+      setSelectedRowKeys([]);
+      fetchMemoCommits();
+      if (failed > 0 && results?.failed?.length) {
+        const firstFew = results.failed.slice(0, 3).map(f => f.error).join('; ');
+        message.warning(`${failed} failed: ${firstFew}${results.failed.length > 3 ? '...' : ''}`);
+      }
+    } catch (err) {
+      message.error(err.response?.data?.error || 'Bulk reserve failed');
+    } finally {
+      setBulkReserveLoading(false);
+    }
   };
 
   const handleEditSubmit = async () => {
@@ -237,6 +289,38 @@ const MemoManagement = () => {
     [repoWinRates]
   );
 
+  const getStatusColor = (status) => {
+    const map = {
+      available: 'success',
+      reserved: 'processing',
+      already_reserved: 'error',
+      unavailable: 'default',
+      too_easy: 'warning',
+      paid_out: 'purple',
+      pending_admin_approval: 'blue',
+      failed: 'error',
+      error: 'error',
+      in_distribution: 'blue',
+    };
+    return map[status] || 'default';
+  };
+
+  const getStatusText = (status) => {
+    const map = {
+      available: 'Available',
+      reserved: 'Reserved',
+      already_reserved: 'Already Reserved',
+      unavailable: 'Unavailable',
+      too_easy: 'Too Easy',
+      paid_out: 'Paid Out',
+      pending_admin_approval: 'Pending Approval',
+      failed: 'Failed',
+      error: 'Error',
+      in_distribution: 'In Distribution',
+    };
+    return map[status] || (status || 'Available');
+  };
+
   const columns = [
     {
       title: (
@@ -283,6 +367,31 @@ const MemoManagement = () => {
                   </Button>
                 </Tooltip>
               )
+            )}
+          </Space>
+        );
+      },
+    },
+    {
+      title: 'Status',
+      dataIndex: 'displayStatus',
+      key: 'displayStatus',
+      width: 140,
+      fixed: 'left',
+      sorter: (a, b) => (a.displayStatus || '').localeCompare(b.displayStatus || ''),
+      render: (_, record) => {
+        const status = record.displayStatus || 'available';
+        const expiresAt = record.expiresAt;
+        return (
+          <Space direction="vertical" size={0}>
+            <Tag color={getStatusColor(status)}>{getStatusText(status)}</Tag>
+            {expiresAt && (
+              <Tooltip title={dayjs(expiresAt).format('YYYY-MM-DD HH:mm')}>
+                <Text type="secondary" style={{ fontSize: 11 }}>
+                  <ClockCircleOutlined style={{ marginRight: 4 }} />
+                  {dayjs(expiresAt).fromNow()}
+                </Text>
+              </Tooltip>
             )}
           </Space>
         );
@@ -559,6 +668,14 @@ const MemoManagement = () => {
           <Col>
             <Space>
               <Button
+                type="primary"
+                icon={<CheckCircleOutlined />}
+                onClick={handleBulkReserve}
+                disabled={selectedRowKeys.length === 0}
+              >
+                Reserve selected ({selectedRowKeys.length})
+              </Button>
+              <Button
                 icon={<FilterOutlined />}
                 onClick={() => setShowFilters(!showFilters)}
                 type={showFilters ? 'primary' : 'default'}
@@ -639,6 +756,10 @@ const MemoManagement = () => {
         )}
 
         <Table
+          rowSelection={{
+            selectedRowKeys: selectedRowKeys,
+            onChange: (keys) => setSelectedRowKeys(keys),
+          }}
           columns={columns}
           dataSource={paginatedData}
           rowKey="id"
@@ -660,6 +781,27 @@ const MemoManagement = () => {
           }}
         />
       </Card>
+
+      <Modal
+        title="Reserve selected commits"
+        open={bulkReserveModalVisible}
+        onOk={handleBulkReserveConfirm}
+        onCancel={() => setBulkReserveModalVisible(false)}
+        okText="Reserve"
+        confirmLoading={bulkReserveLoading}
+      >
+        <Space direction="vertical" style={{ width: '100%' }}>
+          <Text>Account to use for reservation:</Text>
+          <Select
+            placeholder="Select account"
+            style={{ width: '100%' }}
+            value={bulkReserveAccountId}
+            onChange={setBulkReserveAccountId}
+            options={accounts.filter(a => a.isActive).map(a => ({ value: a.id, label: a.accountName }))}
+          />
+          <Text type="secondary">{selectedRowKeys.length} commit(s) selected.</Text>
+        </Space>
+      </Modal>
 
       <Modal
         title="Edit Memo"

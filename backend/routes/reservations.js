@@ -2,7 +2,7 @@ const express = require('express');
 const { Op } = require('sequelize');
 const { Reservation, Commit, UserHabitatAccount, GitRepo } = require('../models');
 const { authenticateToken } = require('../middleware/auth');
-const { createReservationRules, idParamRule, paginationRules, handleValidationErrors } = require('../middleware/validation');
+const { createReservationRules, bulkReservationRules, idParamRule, paginationRules, handleValidationErrors } = require('../middleware/validation');
 const habitatApiService = require('../services/habitatApi');
 const { computePriorityFromCommit } = require('../services/priorityCalculator');
 
@@ -129,10 +129,86 @@ router.get('/', paginationRules, handleValidationErrors, async (req, res, next) 
   }
 });
 
-// Create reservation
+// Bulk create reservations (commit_ids + account_id)
+router.post('/bulk', bulkReservationRules, handleValidationErrors, async (req, res, next) => {
+  try {
+    const { account_id: accountId, commit_ids: commitIds } = req.body;
+
+    const account = await UserHabitatAccount.findOne({
+      where: { id: accountId, userId: req.userId, isActive: true }
+    });
+    if (!account) {
+      return res.status(404).json({ error: 'Account not found or inactive' });
+    }
+
+    const apiUrl = account.apiUrl || process.env.HABITAT_API_URL || 'https://code.habitat.inc';
+    const results = { reserved: [], failed: [] };
+
+    for (const commitId of commitIds) {
+      const commit = await Commit.findByPk(commitId, {
+        include: [{ model: GitRepo, as: 'repo', attributes: ['habitatRepoId'] }]
+      });
+      if (!commit) {
+        results.failed.push({ commitId, error: 'Commit not found' });
+        continue;
+      }
+      if (!commit.repo?.habitatRepoId) {
+        results.failed.push({ commitId, error: 'Repository does not have Habitat ID' });
+        continue;
+      }
+      const existing = await Reservation.findOne({
+        where: { commitId, status: 'reserved' }
+      });
+      if (existing) {
+        results.failed.push({ commitId, error: 'Commit already reserved' });
+        continue;
+      }
+
+      const claimResult = await habitatApiService.claim(
+        account.apiToken,
+        apiUrl,
+        commit.repo.habitatRepoId,
+        commit.baseCommit
+      );
+
+      if (claimResult.success) {
+        const priority = computePriorityFromCommit(commit);
+        await Reservation.create({
+          userId: req.userId,
+          accountId: account.id,
+          commitId,
+          habitatReservationId: claimResult.reservationId,
+          status: 'reserved',
+          expiresAt: claimResult.expiresAt,
+          reservedAt: new Date(),
+          priority
+        });
+        results.reserved.push({ commitId });
+      } else {
+        results.failed.push({ commitId, error: claimResult.error || 'Claim failed' });
+      }
+    }
+
+    res.status(201).json({
+      message: `Reserved ${results.reserved.length} of ${commitIds.length} commit(s)`,
+      reserved: results.reserved.length,
+      failed: results.failed.length,
+      results
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Create reservation (single)
 router.post('/', createReservationRules, handleValidationErrors, async (req, res, next) => {
   try {
     const { commitId, accountId } = req.body;
+    const singleCommitId = req.body.commit_id || commitId;
+    if (!singleCommitId) {
+      return res.status(400).json({ error: 'commit_id or commitId is required' });
+    }
+    const cid = parseInt(singleCommitId, 10);
 
     // Verify account belongs to user
     const account = await UserHabitatAccount.findOne({
@@ -159,7 +235,7 @@ router.post('/', createReservationRules, handleValidationErrors, async (req, res
     }
 
     // Get commit with repo info
-    const commitWithRepo = await Commit.findByPk(commitId, {
+    const commitWithRepo = await Commit.findByPk(cid, {
       include: [{ model: require('../models').GitRepo, as: 'repo', attributes: ['habitatRepoId'] }]
     });
 
@@ -184,7 +260,7 @@ router.post('/', createReservationRules, handleValidationErrors, async (req, res
     const reservation = await Reservation.create({
       userId: req.userId,
       accountId,
-      commitId,
+      commitId: cid,
       habitatReservationId: habitatReservation.reservationId,
       status: 'reserved',
       expiresAt: habitatReservation.expiresAt,

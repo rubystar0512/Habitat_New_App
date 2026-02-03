@@ -14,7 +14,8 @@ import {
   Skeleton,
   Row,
   Col,
-  Popconfirm
+  Popconfirm,
+  Checkbox,
 } from 'antd';
 import {
   ReloadOutlined,
@@ -44,13 +45,14 @@ const ReservationsTable = () => {
   const [releasing, setReleasing] = useState({});
   const [stats, setStats] = useState({ total: 0, released: 0 });
   const [filters, setFilters] = useState({
-    status: undefined,
+    status: 'reserved', // default: show only reserved, not released
     account: '',
     repo: undefined,
     merged_commit: '',
     base_commit: '',
     pr_number: ''
   });
+  const [showOnlyReserved, setShowOnlyReserved] = useState(true);
   const [showFilters, setShowFilters] = useState(false);
   const [pagination, setPagination] = useState({
     current: 1,
@@ -191,7 +193,7 @@ const ReservationsTable = () => {
 
   const handleResetFilters = () => {
     setFilters({
-      status: undefined,
+      status: showOnlyReserved ? 'reserved' : undefined,
       account: '',
       repo: undefined,
       merged_commit: '',
@@ -199,6 +201,12 @@ const ReservationsTable = () => {
       pr_number: ''
     });
     setPagination(prev => ({ ...prev, current: 1 }));
+  };
+
+  const handleShowOnlyReservedChange = (e) => {
+    const checked = e.target.checked;
+    setShowOnlyReserved(checked);
+    handleFilterChange('status', checked ? 'reserved' : undefined);
   };
 
   // Get unique accounts and repos for filters
@@ -693,9 +701,16 @@ const ReservationsTable = () => {
             </Space>
           </Col>
         </Row>
-        {/* Stats - Total Reservations & Total Released */}
+        {/* Stats - Total Reservations & Total Released + Show only reserved checkbox */}
         <Row align="middle" style={{ marginBottom: 16, gap: 16, flexWrap: 'wrap' }}>
           <Space size="middle" wrap>
+            <Checkbox
+              checked={showOnlyReserved}
+              onChange={handleShowOnlyReservedChange}
+              style={{ color: 'rgb(241, 245, 249)' }}
+            >
+              Show only reserved
+            </Checkbox>
             <span
               style={{
                 background: 'rgba(22, 163, 74, 0.2)',
@@ -746,6 +761,7 @@ const ReservationsTable = () => {
                   size="large"
                   value={filters.status}
                   onChange={(value) => {
+                    setShowOnlyReserved(value === 'reserved');
                     handleFilterChange('status', value);
                     fetchReservations();
                   }}
