@@ -574,7 +574,7 @@ const Statistics = () => {
   const repoWinRatesOption = {
     title: {
       text: 'Which repo to focus on first',
-      subtext: 'Focus rate from scores + pattern. With paid_out: avg of wins; with no wins yet: avg of all commits (potential). Higher = better fit.',
+      subtext: 'Higher = better fit.',
       left: 'center',
       textStyle: { color: 'rgb(241, 245, 249)' },
       subtextStyle: { color: 'rgb(148, 163, 184)', fontSize: 12 }
@@ -702,7 +702,7 @@ const Statistics = () => {
   // Paid Out Scores Histogram - Habitat Score
   const paidOutHabitatScoreOption = paidOutScores && paidOutScores.habitateScore && paidOutScores.habitateScore.length > 0 ? {
     title: {
-      text: 'Paid Out Commits - Habitat Score Distribution',
+      text: 'Habitat Score Distribution',
       subtext: `Total: ${paidOutScores.total || 0} commits | Avg: ${paidOutScores.stats?.habitate?.avg?.toFixed(1) || 0}`,
       left: 'center',
       textStyle: { color: 'rgb(241, 245, 249)' },
@@ -755,7 +755,7 @@ const Statistics = () => {
   // Paid Out Scores Histogram - Suitability Score
   const paidOutSuitabilityScoreOption = paidOutScores && paidOutScores.suitabilityScore && paidOutScores.suitabilityScore.length > 0 ? {
     title: {
-      text: 'Paid Out Commits - Suitability Score Distribution',
+      text: 'Suitability Score Distribution',
       subtext: `Total: ${paidOutScores.total || 0} commits | Avg: ${paidOutScores.stats?.suitability?.avg?.toFixed(1) || 0}`,
       left: 'center',
       textStyle: { color: 'rgb(241, 245, 249)' },
@@ -808,7 +808,7 @@ const Statistics = () => {
   // All Commits Scores Histogram - Habitat Score
   const allCommitsHabitatScoreOption = allCommitsScores && allCommitsScores.habitateScore && allCommitsScores.habitateScore.length > 0 ? {
     title: {
-      text: 'All Commits - Habitat Score Distribution',
+      text: 'Habitat Score Distribution',
       subtext: `Total: ${allCommitsScores.total || 0} commits | Avg: ${allCommitsScores.stats?.habitate?.avg?.toFixed(1) || 0}`,
       left: 'center',
       textStyle: { color: 'rgb(241, 245, 249)' },
@@ -861,7 +861,7 @@ const Statistics = () => {
   // All Commits Scores Histogram - Suitability Score
   const allCommitsSuitabilityScoreOption = allCommitsScores && allCommitsScores.suitabilityScore && allCommitsScores.suitabilityScore.length > 0 ? {
     title: {
-      text: 'All Commits - Suitability Score Distribution',
+      text: 'Suitability Score Distribution',
       subtext: `Total: ${allCommitsScores.total || 0} commits | Avg: ${allCommitsScores.stats?.suitability?.avg?.toFixed(1) || 0}`,
       left: 'center',
       textStyle: { color: 'rgb(241, 245, 249)' },
@@ -914,7 +914,7 @@ const Statistics = () => {
   // All Commits Scores Histogram - Difficulty Score
   const allCommitsDifficultyScoreOption = allCommitsScores && allCommitsScores.difficultyScore && allCommitsScores.difficultyScore.length > 0 ? {
     title: {
-      text: 'All Commits - Difficulty Score Distribution',
+      text: 'Difficulty Score Distribution',
       subtext: `Total: ${allCommitsScores.total || 0} commits | Avg: ${allCommitsScores.stats?.difficulty?.avg?.toFixed(1) || 0}`,
       left: 'center',
       textStyle: { color: 'rgb(241, 245, 249)' },
@@ -967,7 +967,7 @@ const Statistics = () => {
   // Paid Out Scores Histogram - Difficulty Score
   const paidOutDifficultyScoreOption = paidOutScores && paidOutScores.difficultyScore && paidOutScores.difficultyScore.length > 0 ? {
     title: {
-      text: 'Paid Out Commits - Difficulty Score Distribution',
+      text: 'Difficulty Score Distribution',
       subtext: `Total: ${paidOutScores.total || 0} commits | Avg: ${paidOutScores.stats?.difficulty?.avg?.toFixed(1) || 0}`,
       left: 'center',
       textStyle: { color: 'rgb(241, 245, 249)' },
@@ -1381,7 +1381,7 @@ const Statistics = () => {
               bodyStyle={{ padding: '20px' }}
             >
               <Title level={4} style={{ color: 'rgb(241, 245, 249)', marginBottom: 24, textAlign: 'center' }}>
-                Paid Out Commits Score Analysis
+                Successful Commits Score Analysis
               </Title>
               <Row gutter={[16, 16]}>
                 {paidOutHabitatScoreOption && (

@@ -21,6 +21,7 @@ import {
   BulbOutlined,
   SafetyOutlined,
   ClockCircleOutlined,
+  CalculatorOutlined,
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 
@@ -45,6 +46,7 @@ const UserGuide = () => {
     { id: 'my-account', label: 'My Account', icon: <UserOutlined /> },
     { id: 'successful-tasks', label: 'Successful Tasks', icon: <TrophyOutlined /> },
     { id: 'statistics', label: 'Statistics', icon: <BarChartOutlined /> },
+    { id: 'calculation-logic', label: 'Calculation Logic', icon: <CalculatorOutlined /> },
     { id: 'admin-features', label: 'Admin Features', icon: <SettingOutlined /> },
     { id: 'tips', label: 'Tips & Best Practices', icon: <BulbOutlined /> },
     { id: 'support', label: 'Need Help?', icon: <InfoCircleOutlined /> },
@@ -116,7 +118,7 @@ const UserGuide = () => {
       <Row gutter={24}>
         {/* Sidebar Navigation */}
         <Col xs={0} lg={6}>
-          <Affix offsetTop={24}>
+          <Affix offsetTop={120}>
             <Card
               style={{
                 background: '#1e293b',
@@ -538,6 +540,44 @@ const UserGuide = () => {
                                 'Check reservation status and expiration',
                                 'Monitor reservation history',
                                 'Filter reservations by status, date, or repository',
+                                'Suggested priority (auto): priority is computed from commit scores and pattern on create; column shows "Suggested: X" with "Apply suggested" button',
+                                '"✓ Auto" badge when your priority matches the suggested value',
+                              ]}
+                              renderItem={(item) => (
+                                <List.Item style={{ border: 'none', padding: '6px 0' }}>
+                                  <Space>
+                                    <CheckCircleFilled style={{ color: '#16a34a', fontSize: 12 }} />
+                                    <Text style={{ color: '#94a3b8', fontSize: 13 }}>{item}</Text>
+                                  </Space>
+                                </List.Item>
+                              )}
+                            />
+                          </Space>
+                        ),
+                      },
+                      {
+                        key: 'capacity-scheduling',
+                        label: (
+                          <Space>
+                            <ClockCircleOutlined style={{ color: '#16a34a' }} />
+                            <Text strong style={{ color: '#f1f5f9', fontSize: 15 }}>
+                              Capacity-aware Scheduling
+                            </Text>
+                            <Tag color="blue" style={{ marginLeft: 8 }}>New</Tag>
+                          </Space>
+                        ),
+                        children: (
+                          <Space direction="vertical" size="middle" style={{ width: '100%', paddingLeft: 24 }}>
+                            <Paragraph style={{ color: '#cbd5e1', margin: 0 }}>
+                              Stay on top of expiring reservations and high-value commits reserved by others.
+                            </Paragraph>
+                            <List
+                              size="small"
+                              dataSource={[
+                                'Inbox (bell icon in header): notifications for others\' high-value commits expiring in the next 2 hours',
+                                'Your reservations (expiring in 30 min): listed in the same inbox dropdown',
+                                'System alerts: periodic in-app (and optional browser) notifications when your own reservations are expiring in 30 minutes',
+                                'Alerts repeat every few minutes while you have expiring reservations',
                               ]}
                               renderItem={(item) => (
                                 <List.Item style={{ border: 'none', padding: '6px 0' }}>
@@ -735,6 +775,127 @@ const UserGuide = () => {
               </Card>
             </div>
 
+            {/* Calculation Logic */}
+            <div ref={(el) => (sectionRefs.current['calculation-logic'] = el)}>
+              <Card
+                title={
+                  <Space>
+                    <CalculatorOutlined style={{ color: '#16a34a', fontSize: 20 }} />
+                    <Title level={3} style={{ color: '#f1f5f9', margin: 0 }}>
+                      Calculation Logic
+                    </Title>
+                  </Space>
+                }
+                style={{
+                  background: '#1e293b',
+                  border: '1px solid #334155',
+                  borderRadius: 12,
+                }}
+                bodyStyle={{ padding: 24 }}
+              >
+                <Space direction="vertical" size="large" style={{ width: '100%' }}>
+                  <Paragraph style={{ color: '#cbd5e1', fontSize: 15, lineHeight: 1.8 }}>
+                    The app uses commit scores (habitate, suitability, difficulty) to compute <strong>Priority</strong> and <strong>Focus Rate</strong>. Below is how each metric is derived.
+                  </Paragraph>
+                  <Collapse
+                    ghost
+                    expandIconPosition="end"
+                    items={[
+                      {
+                        key: 'raw-scores',
+                        label: <Text strong style={{ color: '#f1f5f9' }}>Raw commit scores (inputs)</Text>,
+                        children: (
+                          <Space direction="vertical" size="small" style={{ width: '100%', paddingLeft: 24 }}>
+                            <Paragraph style={{ color: '#cbd5e1', margin: 0 }}>
+                              Each commit has three scores from the scoring pipeline (not recomputed by the app):
+                            </Paragraph>
+                            <List
+                              size="small"
+                              dataSource={[
+                                'Habitate score (0–150): quality / fit for the platform (patterns, size, penalties).',
+                                'Suitability score (0–100): how suitable the commit is (0 = e.g. dependency changes disqualified).',
+                                'Difficulty score (0–100): how hard the commit is (codebase understanding, complexity).',
+                              ]}
+                              renderItem={(item) => (
+                                <List.Item style={{ border: 'none', padding: '4px 0' }}>
+                                  <Text style={{ color: '#94a3b8', fontSize: 13 }}>{item}</Text>
+                                </List.Item>
+                              )}
+                            />
+                          </Space>
+                        ),
+                      },
+                      {
+                        key: 'priority',
+                        label: <Text strong style={{ color: '#f1f5f9' }}>Priority (0–100) — single-commit score</Text>,
+                        children: (
+                          <Space direction="vertical" size="small" style={{ width: '100%', paddingLeft: 24 }}>
+                            <Paragraph style={{ color: '#cbd5e1', margin: 0 }}>
+                              One number per commit to rank reservations and memo items. Sum of four parts, capped 0–100:
+                            </Paragraph>
+                            <List
+                              size="small"
+                              dataSource={[
+                                'Habitate part: max 40 pts — habitateScore / 5, clamped to [0, 40].',
+                                'Suitability part: max 30 pts — (suitability 0–100) × 0.3, clamped to [0, 30].',
+                                'Difficulty part: max 20 pts — (difficulty 0–100) × 0.2, clamped to [0, 20].',
+                                'Pattern bonus: +5 for single-file with 200+ additions; +5 for multi-file (≥3 files) with 300+ additions (max +10).',
+                              ]}
+                              renderItem={(item) => (
+                                <List.Item style={{ border: 'none', padding: '4px 0' }}>
+                                  <Text style={{ color: '#94a3b8', fontSize: 13 }}>{item}</Text>
+                                </List.Item>
+                              )}
+                            />
+                            <Text style={{ color: '#94a3b8', fontSize: 13 }}>
+                              Used for: suggested priority in Reservations and Memo; focus rate is the average of this over commits per repo.
+                            </Text>
+                          </Space>
+                        ),
+                      },
+                      {
+                        key: 'focus-rate',
+                        label: <Text strong style={{ color: '#f1f5f9' }}>Focus rate (0–100) — per repository</Text>,
+                        children: (
+                          <Space direction="vertical" size="small" style={{ width: '100%', paddingLeft: 24 }}>
+                            <Paragraph style={{ color: '#cbd5e1', margin: 0 }}>
+                              &quot;Which repo to focus on first&quot; — average of Priority over a set of commits in that repo:
+                            </Paragraph>
+                            <List
+                              size="small"
+                              dataSource={[
+                                'If the repo has at least one paid-out commit: average priority over paid-out commits only.',
+                                'If no paid-out commits yet: average priority over all commits in that repo (potential).',
+                              ]}
+                              renderItem={(item) => (
+                                <List.Item style={{ border: 'none', padding: '4px 0' }}>
+                                  <Text style={{ color: '#94a3b8', fontSize: 13 }}>{item}</Text>
+                                </List.Item>
+                              )}
+                            />
+                            <Text style={{ color: '#94a3b8', fontSize: 13 }}>Shown in Statistics — &quot;Which repo to focus on first&quot; chart.</Text>
+                          </Space>
+                        ),
+                      },
+                      {
+                        key: 'win-rate',
+                        label: <Text strong style={{ color: '#f1f5f9' }}>Win rate (%) — per repository</Text>,
+                        children: (
+                          <Space direction="vertical" size="small" style={{ width: '100%', paddingLeft: 24 }}>
+                            <Paragraph style={{ color: '#cbd5e1', margin: 0 }}>
+                              Share of commits in a repo that have been paid out: (paid_out count / total commits) × 100.
+                            </Paragraph>
+                            <Text style={{ color: '#94a3b8', fontSize: 13 }}>Shown in Statistics and in Reservations/Memo tables as &quot;This repo: X% team win rate&quot;.</Text>
+                          </Space>
+                        ),
+                      },
+                    ]}
+                    style={{ background: 'transparent' }}
+                  />
+                </Space>
+              </Card>
+            </div>
+
             {/* Statistics */}
             <div ref={(el) => (sectionRefs.current['statistics'] = el)}>
               <Card
@@ -761,7 +922,8 @@ const UserGuide = () => {
                     {[
                       { title: 'Commits by Repository', desc: 'See commit distribution across different repositories', badge: 'All Users' },
                       { title: 'Commit Score Distribution (Overall)', desc: 'View overall commit distribution across difficulty levels', badge: 'All Users' },
-                      { title: 'Commit Score Distribution by Repository', desc: 'Compare score distributions across different repositories with stacked bar charts', badge: 'All Users', isNew: true },
+                      { title: 'Commit Score Distribution by Repository', desc: 'Compare score distributions across different repositories with stacked bar charts', badge: 'All Users' },
+                      { title: 'Which repo to focus on first', desc: 'Focus rate per repo from paid_out (or all) commits: habitate, suitability, difficulty + pattern. Higher = better fit.', badge: 'All Users', isNew: true },
                       { title: 'Average Scores by Repository', desc: 'Compare habitat, suitability, and difficulty scores across repos', badge: 'All Users' },
                       { title: 'Earnings Over Time', desc: 'Track your earnings progression', badge: 'Team Only' },
                       { title: 'Earnings by Repository', desc: 'See which repositories generate the most earnings', badge: 'Team Only' },
