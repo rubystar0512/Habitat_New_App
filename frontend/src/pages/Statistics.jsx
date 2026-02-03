@@ -26,6 +26,7 @@ const Statistics = () => {
   const [teamAccounts, setTeamAccounts] = useState([]);
   const [paidOutScores, setPaidOutScores] = useState(null);
   const [allCommitsScores, setAllCommitsScores] = useState(null);
+  const [repoWinRates, setRepoWinRates] = useState([]);
   const [summaryStats, setSummaryStats] = useState({
     tooEasyCount: 0,
     avgSuitabilityScore: 0,
@@ -43,6 +44,7 @@ const Statistics = () => {
       const promises = [
         api.get('/stats/repo-commits'),
         api.get('/stats/repo-scores'),
+        api.get('/stats/repo-win-rates'),
         isAdmin() ? api.get('/stats/team-stats') : Promise.resolve({ data: { data: [] } }),
         api.get('/stats/score-distribution'),
         api.get('/stats/score-distribution-by-repo'),
@@ -60,21 +62,22 @@ const Statistics = () => {
       }
 
       const [
-        repoCommits, repoScores, teamStats, scoreDist, scoreDistByRepo,
+        repoCommits, repoScores, repoWinRatesRes, teamStats, scoreDist, scoreDistByRepo,
         earningsTime, earningsRepo, allCommitsScoresData, teamAccountsData, paidOutScoresData
       ] = await Promise.all(promises);
 
-      setRepoCommitsData(repoCommits.data.data || []);
-      setRepoScoresData(repoScores.data.data || []);
-      setTeamStatsData(teamStats.data.data || []);
-      setScoreDistribution(scoreDist.data);
-      setScoreDistributionByRepo(scoreDistByRepo.data.data || []);
-      setEarningsTimeline(earningsTime.data.data || []);
-      setEarningsByRepo(earningsRepo.data);
-      setAllCommitsScores(allCommitsScoresData.data);
+      setRepoCommitsData(repoCommits?.data?.data ?? []);
+      setRepoScoresData(repoScores?.data?.data ?? []);
+      setRepoWinRates(repoWinRatesRes?.data?.repoWinRates ?? []);
+      setTeamStatsData(teamStats?.data?.data ?? []);
+      setScoreDistribution(scoreDist?.data ?? null);
+      setScoreDistributionByRepo(scoreDistByRepo?.data?.data ?? []);
+      setEarningsTimeline(earningsTime?.data?.data ?? []);
+      setEarningsByRepo(earningsRepo?.data ?? { data: [], total: 0 });
+      setAllCommitsScores(allCommitsScoresData?.data ?? null);
       if (isAdmin()) {
-        setTeamAccounts(teamAccountsData.data.data || []);
-        setPaidOutScores(paidOutScoresData.data);
+        setTeamAccounts(teamAccountsData?.data?.data ?? []);
+        setPaidOutScores(paidOutScoresData?.data ?? null);
       }
     } catch (error) {
       console.error('Failed to fetch statistics:', error);
@@ -555,10 +558,73 @@ const Statistics = () => {
             fontWeight: 'bold'
           }
         },
-        data: earningsByRepo.data.slice(0, 20).map(item => ({
+        data: (earningsByRepo?.data ?? []).slice(0, 20).map(item => ({
           value: item.value,
           name: item.name
         }))
+      }
+    ],
+    backgroundColor: 'transparent'
+  };
+
+  // Focus rate per repo: which repo to focus on first (from paid_out commits' scores + pattern)
+  const repoWinRatesSorted = [...(repoWinRates || [])]
+    .sort((a, b) => (b.focusRate ?? 0) - (a.focusRate ?? 0))
+    .slice(0, 20);
+  const repoWinRatesOption = {
+    title: {
+      text: 'Which repo to focus on first',
+      subtext: 'Focus rate from scores + pattern. With paid_out: avg of wins; with no wins yet: avg of all commits (potential). Higher = better fit.',
+      left: 'center',
+      textStyle: { color: 'rgb(241, 245, 249)' },
+      subtextStyle: { color: 'rgb(148, 163, 184)', fontSize: 12 }
+    },
+    tooltip: {
+      trigger: 'axis',
+      axisPointer: { type: 'shadow' },
+      formatter: (params) => {
+        const idx = params?.[0]?.dataIndex;
+        const item = repoWinRatesSorted[idx];
+        if (!item) return '';
+        const source = (item.paidOutCount ?? 0) > 0 ? 'from paid_out commits' : 'from all commits (no wins yet)';
+        return `${item.fullName || item.repoName || ''}<br/>Focus rate: ${item.focusRate ?? 0} (${source})<br/>Win rate: ${item.winRate ?? 0}% · Paid out: ${item.paidOutCount ?? 0} / ${item.totalCommits ?? 0}`;
+      }
+    },
+    grid: {
+      left: '3%',
+      right: '8%',
+      bottom: '3%',
+      top: 80,
+      containLabel: true
+    },
+    xAxis: {
+      type: 'value',
+      name: 'Focus rate (0–100)',
+      min: 0,
+      max: 100,
+      nameTextStyle: { color: 'rgb(148, 163, 184)' },
+      axisLabel: { color: 'rgb(148, 163, 184)' },
+      splitLine: { lineStyle: { color: '#334155' } }
+    },
+    yAxis: {
+      type: 'category',
+      data: repoWinRatesSorted.map(r => r.fullName || r.repoName || ''),
+      axisLabel: {
+        color: 'rgb(148, 163, 184)',
+        fontSize: 11
+      }
+    },
+    series: [
+      {
+        name: 'Focus rate',
+        type: 'bar',
+        data: repoWinRatesSorted.map(r => ({
+          value: r.focusRate ?? 0,
+          itemStyle: {
+            color: (r.focusRate ?? 0) >= 50 ? '#22c55e' : (r.focusRate ?? 0) >= 20 ? '#f59e0b' : '#64748b'
+          }
+        })),
+        barMaxWidth: 28
       }
     ],
     backgroundColor: 'transparent'
@@ -1091,6 +1157,26 @@ const Statistics = () => {
             <ReactECharts
               option={scoreDistributionOption}
               style={{ height: '400px', width: '100%' }}
+              opts={{ renderer: 'svg' }}
+            />
+          </Card>
+        </Col>
+      </Row>
+
+      {/* Win rate per repo chart */}
+      <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+        <Col xs={24}>
+          <Card
+            style={{
+              background: '#1e293b',
+              border: '1px solid #334155',
+              borderRadius: 12
+            }}
+            bodyStyle={{ padding: '20px' }}
+          >
+            <ReactECharts
+              option={repoWinRatesOption}
+              style={{ height: repoWinRatesSorted.length > 0 ? Math.max(400, repoWinRatesSorted.length * 28) : 400, width: '100%' }}
               opts={{ renderer: 'svg' }}
             />
           </Card>

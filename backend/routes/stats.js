@@ -3,6 +3,7 @@ const { Sequelize, Op } = require('sequelize');
 const { Commit, GitRepo, Reservation, User, SuccessfulTask, UserHabitatAccount, MemoCommit, CommitStatusCache } = require('../models');
 const { sequelize } = require('../config/database');
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
+const { computePriorityFromCommit } = require('../services/priorityCalculator');
 
 const router = express.Router();
 
@@ -82,10 +83,12 @@ router.get('/my-stats', async (req, res, next) => {
   }
 });
 
-// Repo-level win rate: team win rate by repo (paid_out commits / total commits in repo)
+// Repo-level win rate + focus rate. Focus rate = which repo to focus on first.
+// When repo has paid_out commits: avg priority (scores + pattern) of paid_out only.
+// When repo has no paid_out yet (e.g. just started): avg priority of all commits in that repo.
 router.get('/repo-win-rates', async (req, res, next) => {
   try {
-    const [repos, paidOutByRepo] = await Promise.all([
+    const [repos, paidOutByRepo, totalByRepo, paidOutCommits, allCommitsByRepo] = await Promise.all([
       GitRepo.findAll({
         where: { isActive: true },
         attributes: ['id', 'repoName', 'fullName']
@@ -96,27 +99,73 @@ router.get('/repo-win-rates', async (req, res, next) => {
          INNER JOIN commit_status_cache csc ON c.id = csc.commit_id AND csc.status = 'paid_out'
          GROUP BY c.repo_id`,
         { type: sequelize.QueryTypes.SELECT }
-      )
+      ),
+      Commit.findAll({
+        attributes: ['repoId', [sequelize.fn('COUNT', sequelize.col('id')), 'totalCount']],
+        group: ['repoId'],
+        raw: true
+      }),
+      Commit.findAll({
+        attributes: ['id', 'repoId', 'habitateScore', 'suitabilityScore', 'difficultyScore', 'fileChanges', 'additions'],
+        include: [{
+          model: CommitStatusCache,
+          as: 'statusCache',
+          required: true,
+          where: { status: 'paid_out' },
+          attributes: []
+        }],
+        distinct: true,
+        raw: true
+      }),
+      Commit.findAll({
+        attributes: ['id', 'repoId', 'habitateScore', 'suitabilityScore', 'difficultyScore', 'fileChanges', 'additions'],
+        raw: true
+      })
     ]);
-
-    const totalByRepo = await Commit.findAll({
-      attributes: ['repoId', [sequelize.fn('COUNT', sequelize.col('id')), 'totalCount']],
-      group: ['repoId'],
-      raw: true
-    });
 
     const totalMap = new Map(totalByRepo.map(r => [r.repoId, parseInt(r.totalCount, 10) || 0]));
     const paidOutMap = new Map((paidOutByRepo || []).map(r => [r.repoId, parseInt(r.paidOutCount, 10) || 0]));
+
+    // Per-repo average priority from paid_out commits (when any exist)
+    const repoPrioritiesPaidOut = (paidOutCommits || []).reduce((acc, c) => {
+      const rid = c.repoId;
+      if (!acc[rid]) acc[rid] = [];
+      acc[rid].push(computePriorityFromCommit(c));
+      return acc;
+    }, {});
+    const repoFocusRateFromPaidOut = new Map();
+    Object.entries(repoPrioritiesPaidOut).forEach(([repoId, priorities]) => {
+      const sum = priorities.reduce((a, b) => a + b, 0);
+      repoFocusRateFromPaidOut.set(parseInt(repoId, 10), Math.round((sum / priorities.length) * 100) / 100);
+    });
+
+    // Per-repo average priority from ALL commits (fallback when no paid_out yet)
+    const repoPrioritiesAll = (allCommitsByRepo || []).reduce((acc, c) => {
+      const rid = c.repoId;
+      if (!acc[rid]) acc[rid] = [];
+      acc[rid].push(computePriorityFromCommit(c));
+      return acc;
+    }, {});
+    const repoFocusRateFromAll = new Map();
+    Object.entries(repoPrioritiesAll).forEach(([repoId, priorities]) => {
+      const sum = priorities.reduce((a, b) => a + b, 0);
+      repoFocusRateFromAll.set(parseInt(repoId, 10), Math.round((sum / priorities.length) * 100) / 100);
+    });
 
     const repoWinRates = repos.map(repo => {
       const total = totalMap.get(repo.id) || 0;
       const paidOut = paidOutMap.get(repo.id) || 0;
       const winRate = total > 0 ? Math.round((paidOut / total) * 10000) / 100 : 0;
+      // Use paid_out–based focus rate when we have wins; otherwise use all-commits (new repo / just started)
+      const focusRate = paidOut > 0
+        ? (repoFocusRateFromPaidOut.get(repo.id) ?? 0)
+        : (repoFocusRateFromAll.get(repo.id) ?? 0);
       return {
         repoId: repo.id,
         repoName: repo.repoName,
         fullName: repo.fullName,
         winRate,
+        focusRate,
         paidOutCount: paidOut,
         totalCommits: total
       };

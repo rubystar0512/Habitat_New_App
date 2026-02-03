@@ -5,11 +5,12 @@
 function computePriorityFromCommit(commit) {
   if (!commit) return 0;
 
-  const h = commit.habitateScore != null ? Number(commit.habitateScore) : 0;
-  const s = commit.suitabilityScore != null ? Number(commit.suitabilityScore) : 0;
-  const d = commit.difficultyScore != null ? Number(commit.difficultyScore) : 0;
-  const fileChanges = commit.fileChanges != null ? parseInt(commit.fileChanges, 10) : 0;
-  const additions = commit.additions != null ? parseInt(commit.additions, 10) : 0;
+  // Support both camelCase (model) and snake_case (raw query) keys
+  const h = (commit.habitateScore ?? commit.habitate_score) != null ? Number(commit.habitateScore ?? commit.habitate_score) : 0;
+  const s = (commit.suitabilityScore ?? commit.suitability_score) != null ? Number(commit.suitabilityScore ?? commit.suitability_score) : 0;
+  const d = (commit.difficultyScore ?? commit.difficulty_score) != null ? Number(commit.difficultyScore ?? commit.difficulty_score) : 0;
+  const fileChanges = (commit.fileChanges ?? commit.file_changes) != null ? parseInt(commit.fileChanges ?? commit.file_changes, 10) : 0;
+  const additions = (commit.additions ?? commit.additions) != null ? parseInt(commit.additions, 10) : 0;
 
   // Habitate: 0-200 -> 0-40 (score/5, cap 40)
   const habitatePart = Math.min(40, Math.max(0, h / 5));
