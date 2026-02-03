@@ -95,12 +95,12 @@ const Layout = () => {
           if (Notification.permission === 'granted') {
             try {
               new Notification(title, { body: description, icon: '/assets/icon_128x128.png' });
-            } catch (_) {}
+            } catch (_) { }
           } else if (Notification.permission === 'default') {
             Notification.requestPermission?.();
           }
         }
-      } catch (_) {}
+      } catch (_) { }
     };
 
     checkMyReservationsExpiring();
@@ -326,10 +326,10 @@ const Layout = () => {
           boxShadow: '2px 0 8px rgba(0, 0, 0, 0.3)',
         }}
       >
-        <div style={{ 
-          height: 64, 
-          display: 'flex', 
-          alignItems: 'center', 
+        <div style={{
+          height: 64,
+          display: 'flex',
+          alignItems: 'center',
           justifyContent: collapsed ? 'center' : 'flex-start',
           padding: collapsed ? 0 : '0 24px',
           color: '#16a34a',
@@ -339,16 +339,16 @@ const Layout = () => {
           marginBottom: 8
         }}>
           {collapsed ? (
-            <img 
-              src="/assets/icon_64x64.png" 
-              alt="Habitat" 
+            <img
+              src="/assets/icon_64x64.png"
+              alt="Habitat"
               style={{ width: 32, height: 32, objectFit: 'contain' }}
             />
           ) : (
             <Space>
-              <img 
-                src="/assets/icon_64x64.png" 
-                alt="Habitat" 
+              <img
+                src="/assets/icon_64x64.png"
+                alt="Habitat"
                 style={{ width: 30, height: 30, objectFit: 'contain' }}
               />
               <span style={{ fontSize: 21, fontWeight: 600 }}>Habitat</span>
@@ -365,7 +365,7 @@ const Layout = () => {
         />
       </Sider>
       <AntLayout style={{ marginLeft: collapsed ? 80 : 240, transition: 'all 0.2s' }}>
-        <Header style={{ 
+        <Header style={{
           background: '#1e293b',
           padding: '0 24px',
           display: 'flex',
@@ -386,7 +386,7 @@ const Layout = () => {
               dropdownRender={() => inboxDropdownContent}
               onOpenChange={(open) => open && fetchExpiringCommits()}
             >
-              <Badge count={expiringCommits.length + myExpiringReservations.length} size="small" offset={[-2, 2]} showZero={false}>
+              <Badge count={expiringCommits.length + myExpiringReservations.length} size="default" color="#16a34a" offset={[-2, 2]} showZero={false}>
                 <Button
                   type="text"
                   icon={<BellOutlined />}
@@ -397,6 +397,10 @@ const Layout = () => {
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
+                    padding: 3,
+                    background: '#1e293b',
+                    border: '1px solid #334155',
+                    borderRadius: 12,
                   }}
                   onMouseEnter={(e) => {
                     e.currentTarget.style.background = '#334155';
@@ -408,13 +412,13 @@ const Layout = () => {
               </Badge>
             </Dropdown>
             <Space size={12} align="center">
-              <Avatar 
+              <Avatar
                 size={36}
-                style={{ 
+                style={{
                   background: 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)',
                   border: '2px solid rgba(255, 255, 255, 0.1)'
-                }} 
-                icon={<UserOutlined />} 
+                }}
+                icon={<UserOutlined />}
               />
               <Space direction="vertical" size={0} style={{ lineHeight: 1.4 }}>
                 <Text strong style={{ color: 'rgb(241, 245, 249)', fontSize: 14, display: 'block' }}>
@@ -452,8 +456,8 @@ const Layout = () => {
             </Button>
           </Space>
         </Header>
-        <Content style={{ 
-          margin: '24px', 
+        <Content style={{
+          margin: '24px',
           background: 'transparent',
           minHeight: 'calc(100vh - 112px)'
         }}>
