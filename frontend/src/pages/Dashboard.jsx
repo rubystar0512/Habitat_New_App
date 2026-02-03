@@ -41,19 +41,28 @@ const CARD_STYLE = {
   transition: 'transform 0.2s ease, box-shadow 0.2s ease'
 };
 
+const STAT_VALUE_FONT_SIZE = 28;
+
 /** Stat block with animated value so count-up always runs (avoids Statistic formatter quirks) */
-const StatCard = ({ title, value = 0, prefix, valueStyle, duration = 900, children }) => (
-  <>
-    <div className="ant-statistic-title" style={{ color: 'rgb(148, 163, 184)', marginBottom: 4 }}>{title}</div>
-    <div className="ant-statistic-content" style={{ display: 'flex', alignItems: 'baseline', flexWrap: 'wrap', gap: 4 }}>
-      {prefix && <span className="ant-statistic-content-prefix" style={{ marginRight: 4 }}>{prefix}</span>}
-      <span className="ant-statistic-content-value" style={{ ...valueStyle, fontSize: valueStyle?.fontSize ?? 28, fontWeight: 600 }}>
-        <AnimatedNumber value={value} duration={duration} />
-      </span>
-    </div>
-    {children}
-  </>
-);
+const StatCard = ({ title, value = 0, prefix, valueStyle, duration = 900, children }) => {
+  const fontSize = valueStyle?.fontSize ?? STAT_VALUE_FONT_SIZE;
+  return (
+    <>
+      <div className="ant-statistic-title" style={{ color: 'rgb(148, 163, 184)', marginBottom: 4 }}>{title}</div>
+      <div className="ant-statistic-content" style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+        {prefix && (
+          <span className="ant-statistic-content-prefix" style={{ fontSize, lineHeight: 1, display: 'inline-flex', alignItems: 'center' }}>
+            {prefix}
+          </span>
+        )}
+        <span className="ant-statistic-content-value" style={{ ...valueStyle, fontSize, fontWeight: 600, lineHeight: 1 }}>
+          <AnimatedNumber value={value} duration={duration} />
+        </span>
+      </div>
+      {children}
+    </>
+  );
+};
 
 const Dashboard = () => {
   const { user, isAdmin } = useAuth();
@@ -134,6 +143,12 @@ const Dashboard = () => {
           transform: translateY(-3px);
           box-shadow: 0 12px 28px rgba(0,0,0,0.3);
           border-color: #475569 !important;
+        }
+        .dashboard-stat-card .ant-statistic-content-prefix .anticon {
+          font-size: 1em;
+        }
+        .dashboard-activity-item:hover {
+          background: rgba(51, 65, 85, 0.5) !important;
         }
       `}</style>
       <Title level={2} style={{ color: 'rgb(241, 245, 249)', marginBottom: 8 }}>
