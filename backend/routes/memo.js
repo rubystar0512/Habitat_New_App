@@ -1,6 +1,7 @@
 const express = require('express');
 const { Op } = require('sequelize');
 const { MemoCommit, Commit, GitRepo, CommitStatusCache, Reservation } = require('../models');
+const MEMO_LIMIT_ROUTE = Math.max(1, parseInt(process.env.MEMO_LIMIT, 10) || 45);
 const { authenticateToken } = require('../middleware/auth');
 const { idParamRule, paginationRules, handleValidationErrors } = require('../middleware/validation');
 const { computePriorityFromCommit } = require('../services/priorityCalculator');
@@ -194,6 +195,62 @@ router.patch('/:id', idParamRule, handleValidationErrors, async (req, res, next)
     await memoCommit.update(updateData);
 
     res.json({ message: 'Memo updated successfully', memoCommit });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Bulk add to memo (commit_ids array)
+router.post('/bulk', async (req, res, next) => {
+  try {
+    const { commit_ids: commitIds } = req.body;
+    if (!Array.isArray(commitIds) || commitIds.length === 0) {
+      return res.status(400).json({ error: 'commit_ids array is required' });
+    }
+    const currentCount = await MemoCommit.count({ where: { userId: req.userId } });
+    const ids = commitIds.slice(0, Math.max(0, MEMO_LIMIT_ROUTE - currentCount)).map(id => parseInt(id, 10)).filter(n => n > 0);
+    const added = [];
+    const skipped = [];
+    for (const commitId of ids) {
+      const commit = await Commit.findByPk(commitId);
+      if (!commit) {
+        skipped.push({ commitId, reason: 'not_found' });
+        continue;
+      }
+      const existingOther = await MemoCommit.findOne({ where: { commitId, userId: { [Op.ne]: req.userId } } });
+      if (existingOther) {
+        skipped.push({ commitId, reason: 'in_another_memo' });
+        continue;
+      }
+      const [memoCommit, created] = await MemoCommit.findOrCreate({
+        where: { userId: req.userId, commitId },
+        defaults: { userId: req.userId, commitId, priority: 0, notes: null }
+      });
+      if (created) added.push({ commitId, memoId: memoCommit.id });
+    }
+    res.status(201).json({
+      message: `Added ${added.length} to memo`,
+      added: added.length,
+      skipped: skipped.length,
+      results: { added, skipped }
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Bulk remove from memo (memo row ids)
+router.delete('/bulk', async (req, res, next) => {
+  try {
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'ids array is required' });
+    }
+    const numIds = ids.map(id => parseInt(id, 10)).filter(n => n > 0);
+    const deleted = await MemoCommit.destroy({
+      where: { id: { [Op.in]: numIds }, userId: req.userId }
+    });
+    res.json({ message: `Removed ${deleted} from memo`, deleted });
   } catch (error) {
     next(error);
   }

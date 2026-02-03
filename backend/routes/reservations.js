@@ -54,31 +54,38 @@ router.get('/', paginationRules, handleValidationErrors, async (req, res, next) 
       order = [[col(dbField.includes('.') ? dbField : `Reservation.${dbField}`), orderDirection]];
     }
 
-    const { count, rows: reservations } = await Reservation.findAndCountAll({
-      where,
-      include: [
-        {
-          model: Commit,
-          as: 'commit',
-          include: [{ 
-            model: require('../models').GitRepo, 
-            as: 'repo',
-            attributes: ['id', 'repoName', 'fullName', 'habitatRepoId']
-          }]
-        },
-        {
-          model: UserHabitatAccount,
-          as: 'account',
-          attributes: ['id', 'accountName', 'apiUrl']
-        }
-      ],
-      limit,
-      offset,
-      order
-    });
+    const userIdWhere = { userId: req.userId };
+    const [mainResult, totalReservations, totalReleased] = await Promise.all([
+      Reservation.findAndCountAll({
+        where,
+        include: [
+          {
+            model: Commit,
+            as: 'commit',
+            include: [{
+              model: require('../models').GitRepo,
+              as: 'repo',
+              attributes: ['id', 'repoName', 'fullName', 'habitatRepoId']
+            }]
+          },
+          {
+            model: UserHabitatAccount,
+            as: 'account',
+            attributes: ['id', 'accountName', 'apiUrl']
+          }
+        ],
+        limit,
+        offset,
+        order
+      }),
+      Reservation.count({ where: userIdWhere }),
+      Reservation.count({ where: { ...userIdWhere, status: 'released' } })
+    ]);
+    const count = mainResult.count;
+    const rows = mainResult.rows;
 
     // Format response to include commit details
-    const formattedReservations = reservations.map(reservation => {
+    const formattedReservations = rows.map(reservation => {
       const commit = reservation.commit;
       return {
         id: reservation.id,
@@ -122,7 +129,11 @@ router.get('/', paginationRules, handleValidationErrors, async (req, res, next) 
       reservations: formattedReservations,
       total: count,
       limit,
-      offset
+      offset,
+      stats: {
+        total: totalReservations,
+        released: totalReleased
+      }
     });
   } catch (error) {
     next(error);
@@ -295,6 +306,36 @@ router.patch('/:id', idParamRule, handleValidationErrors, async (req, res, next)
     }
     await reservation.update(updates);
     res.json({ message: 'Reservation updated', reservation });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Bulk cancel reservations (release selected)
+router.delete('/bulk', async (req, res, next) => {
+  try {
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'ids array is required' });
+    }
+    const numIds = ids.map(id => parseInt(id, 10)).filter(n => n > 0);
+    const reservations = await Reservation.findAll({
+      where: { id: { [Op.in]: numIds }, userId: req.userId },
+      include: [{ model: UserHabitatAccount, as: 'account', attributes: ['id', 'apiToken', 'apiUrl'] }]
+    });
+    let released = 0;
+    for (const r of reservations) {
+      if (r.habitatReservationId && r.account) {
+        await habitatApiService.deleteReservation(
+          r.account.apiToken,
+          r.account.apiUrl || process.env.HABITAT_API_URL || 'https://code.habitat.inc',
+          r.habitatReservationId
+        );
+      }
+      await r.update({ status: 'released', cancelledAt: new Date() });
+      released++;
+    }
+    res.json({ message: `Released ${released} reservation(s)`, released });
   } catch (error) {
     next(error);
   }

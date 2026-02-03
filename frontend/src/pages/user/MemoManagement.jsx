@@ -66,6 +66,11 @@ const MemoManagement = () => {
   const [bulkReserveModalVisible, setBulkReserveModalVisible] = useState(false);
   const [bulkReserveAccountId, setBulkReserveAccountId] = useState(null);
   const [bulkReserveLoading, setBulkReserveLoading] = useState(false);
+  const [singleReserveRecord, setSingleReserveRecord] = useState(null);
+  const [singleReserveModalVisible, setSingleReserveModalVisible] = useState(false);
+  const [singleReserveAccountId, setSingleReserveAccountId] = useState(null);
+  const [singleReserveLoading, setSingleReserveLoading] = useState(false);
+  const [bulkDeleteLoading, setBulkDeleteLoading] = useState(false);
 
   useEffect(() => {
     fetchMemoCommits();
@@ -191,6 +196,54 @@ const MemoManagement = () => {
       message.error(err.response?.data?.error || 'Bulk reserve failed');
     } finally {
       setBulkReserveLoading(false);
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedRowKeys.length === 0) {
+      message.warning('Select at least one memo item');
+      return;
+    }
+    setBulkDeleteLoading(true);
+    try {
+      const res = await api.delete('/memo/bulk', { data: { ids: selectedRowKeys } });
+      message.success(res.data.message || `Removed ${res.data.deleted} from memo`);
+      setSelectedRowKeys([]);
+      fetchMemoCommits();
+    } catch (err) {
+      message.error(err.response?.data?.error || 'Bulk delete failed');
+    } finally {
+      setBulkDeleteLoading(false);
+    }
+  };
+
+  const handleSingleReserve = (record) => {
+    setSingleReserveRecord(record);
+    setSingleReserveAccountId(accounts.find(a => a.isActive)?.id ?? null);
+    setSingleReserveModalVisible(true);
+  };
+
+  const handleSingleReserveConfirm = async () => {
+    if (!singleReserveRecord || !singleReserveAccountId) {
+      message.error('Select an account');
+      return;
+    }
+    const commitId = singleReserveRecord.commitId ?? singleReserveRecord.commit_id;
+    if (!commitId) {
+      message.error('Invalid commit');
+      return;
+    }
+    setSingleReserveLoading(true);
+    try {
+      await api.post('/reservations', { commit_id: commitId, account_id: singleReserveAccountId });
+      message.success('Reservation created');
+      setSingleReserveModalVisible(false);
+      setSingleReserveRecord(null);
+      fetchMemoCommits();
+    } catch (err) {
+      message.error(err.response?.data?.error || 'Reserve failed');
+    } finally {
+      setSingleReserveLoading(false);
     }
   };
 
@@ -340,31 +393,33 @@ const MemoManagement = () => {
         const isApplying = priorityUpdating[record.id];
         const matchesSuggested = suggested != null && suggested === current;
         return (
-          <Space size="small" direction="vertical" align="center" style={{ margin: 0 }}>
+          <Space size="small" direction="vertical" align="center" style={{ margin: 0, display: 'flex', justifyContent: 'center', flexDirection: 'row' }}>
             <Tag color={current >= 50 ? 'red' : current >= 20 ? 'orange' : 'default'}>
               {current}
             </Tag>
             {suggested != null && (
               matchesSuggested ? (
                 <Tooltip title="Matches auto-suggested value">
-                  <Text type="secondary" style={{ fontSize: 11 }}>
-                    <CheckCircleOutlined style={{ marginRight: 4, color: 'var(--ant-color-success)' }} />
-                    Auto
-                  </Text>
+                  <Space size="small">
+                    <CheckCircleOutlined style={{ color: 'var(--ant-color-success)' }} />
+                    <Text type="secondary" style={{ fontSize: 11 }}>Auto</Text>
+                  </Space>
                 </Tooltip>
               ) : (
                 <Tooltip title={`Apply suggested priority (${suggested})`}>
-                  <Button
-                    type="primary"
-                    ghost
-                    size="small"
-                    icon={<ThunderboltOutlined />}
-                    loading={isApplying}
-                    onClick={() => handleApplySuggestedPriority(record)}
-                    style={{ minWidth: 32 }}
-                  >
-                    {suggested}
-                  </Button>
+                  <Space size="small">
+                    <Button
+                      type="primary"
+                      ghost
+                      size="small"
+                      icon={<ThunderboltOutlined />}
+                      loading={isApplying}
+                      onClick={() => handleApplySuggestedPriority(record)}
+                      style={{ minWidth: 32 }}
+                    >
+                      {suggested}
+                    </Button>
+                  </Space>
                 </Tooltip>
               )
             )}
@@ -595,6 +650,17 @@ const MemoManagement = () => {
       fixed: 'right',
       render: (_, record) => (
         <Space size="small">
+          <Tooltip title="Reserve this commit">
+            <Button
+              type="text"
+              size="small"
+              icon={<CheckCircleOutlined />}
+              onClick={() => handleSingleReserve(record)}
+              style={{ color: '#52c41a', padding: '4px 8px' }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(82, 196, 26, 0.1)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+            />
+          </Tooltip>
           <Tooltip title="Edit Memo">
             <Button
               type="text"
@@ -666,7 +732,7 @@ const MemoManagement = () => {
             )}
           </Col>
           <Col>
-            <Space>
+            <Space wrap>
               <Button
                 type="primary"
                 icon={<CheckCircleOutlined />}
@@ -674,6 +740,15 @@ const MemoManagement = () => {
                 disabled={selectedRowKeys.length === 0}
               >
                 Reserve selected ({selectedRowKeys.length})
+              </Button>
+              <Button
+                danger
+                icon={<DeleteOutlined />}
+                onClick={handleBulkDelete}
+                disabled={selectedRowKeys.length === 0}
+                loading={bulkDeleteLoading}
+              >
+                Delete selected ({selectedRowKeys.length})
               </Button>
               <Button
                 icon={<FilterOutlined />}
@@ -772,9 +847,12 @@ const MemoManagement = () => {
             pageSizeOptions: ['10', '20', '50', '100', '200'],
           }}
           onChange={(newPagination) => setPagination(newPagination)}
-          scroll={{ x: 'max-content', y: 'calc(100vh - 400px)' }}
+          scroll={{
+            x: 'max-content',
+            y: 'calc(60vh)',
+          }}
           sticky={{
-            offsetHeader: 0
+            offsetHeader: 0,
           }}
           style={{
             background: '#1e293b',
@@ -801,6 +879,30 @@ const MemoManagement = () => {
           />
           <Text type="secondary">{selectedRowKeys.length} commit(s) selected.</Text>
         </Space>
+      </Modal>
+
+      <Modal
+        title="Reserve this commit"
+        open={singleReserveModalVisible}
+        onOk={handleSingleReserveConfirm}
+        onCancel={() => { setSingleReserveModalVisible(false); setSingleReserveRecord(null); }}
+        okText="Reserve"
+        confirmLoading={singleReserveLoading}
+      >
+        {singleReserveRecord && (
+          <Space direction="vertical" style={{ width: '100%' }}>
+            <Text><strong>Repo:</strong> {singleReserveRecord.repo_name || '—'}</Text>
+            <Text><strong>Base commit:</strong> <code>{(singleReserveRecord.base_commit || '').slice(0, 8)}</code></Text>
+            <Text>Account to use:</Text>
+            <Select
+              placeholder="Select account"
+              style={{ width: '100%' }}
+              value={singleReserveAccountId}
+              onChange={setSingleReserveAccountId}
+              options={accounts.filter(a => a.isActive).map(a => ({ value: a.id, label: a.accountName }))}
+            />
+          </Space>
+        )}
       </Modal>
 
       <Modal

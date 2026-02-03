@@ -705,6 +705,42 @@ router.post('/:id/unmark-unsuitable', idParamRule, handleValidationErrors, async
   }
 });
 
+// Bulk mark commits as unsuitable
+router.post('/bulk-mark-unsuitable', async (req, res, next) => {
+  try {
+    const { commit_ids: commitIds } = req.body;
+    if (!Array.isArray(commitIds) || commitIds.length === 0) {
+      return res.status(400).json({ error: 'commit_ids array is required' });
+    }
+    const ids = commitIds.map(id => parseInt(id, 10)).filter(n => n > 0);
+    const [updated] = await Commit.update(
+      { isUnsuitable: true, unsuitableReason: 'Manually marked as unsuitable' },
+      { where: { id: { [Op.in]: ids } } }
+    );
+    res.json({ message: `Marked ${updated} commit(s) as unsuitable`, updated });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Bulk unmark commits as unsuitable
+router.post('/bulk-unmark-unsuitable', async (req, res, next) => {
+  try {
+    const { commit_ids: commitIds } = req.body;
+    if (!Array.isArray(commitIds) || commitIds.length === 0) {
+      return res.status(400).json({ error: 'commit_ids array is required' });
+    }
+    const ids = commitIds.map(id => parseInt(id, 10)).filter(n => n > 0);
+    const [updated] = await Commit.update(
+      { isUnsuitable: false, unsuitableReason: null },
+      { where: { id: { [Op.in]: ids } } }
+    );
+    res.json({ message: `Unmarked ${updated} commit(s) as unsuitable`, updated });
+  } catch (error) {
+    next(error);
+  }
+});
+
 const MEMO_LIMIT = Math.max(1, parseInt(process.env.MEMO_LIMIT, 10) || 45);
 
 // Add commit to memo

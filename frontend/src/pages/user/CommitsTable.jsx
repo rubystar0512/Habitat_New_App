@@ -566,6 +566,40 @@ const CommitsTable = () => {
     }
   };
 
+  const handleBulkAddToMemo = async () => {
+    if (selectedCommitRowKeys.length === 0) {
+      message.warning('Select at least one commit');
+      return;
+    }
+    try {
+      const res = await api.post('/memo/bulk', { commit_ids: selectedCommitRowKeys });
+      message.success(res.data.message || `Added ${res.data.added} to memo`);
+      setSelectedCommitRowKeys([]);
+      fetchCommits();
+      fetchMyStats();
+      if (res.data.skipped > 0 && res.data.results?.skipped?.length) {
+        message.warning(`${res.data.skipped} skipped (limit or already in another memo)`);
+      }
+    } catch (err) {
+      message.error(err.response?.data?.error || 'Bulk add to memo failed');
+    }
+  };
+
+  const handleBulkMarkUnsuitable = async () => {
+    if (selectedCommitRowKeys.length === 0) {
+      message.warning('Select at least one commit');
+      return;
+    }
+    try {
+      const res = await api.post('/commits/bulk-mark-unsuitable', { commit_ids: selectedCommitRowKeys });
+      message.success(res.data.message || `Marked ${res.data.updated} as unsuitable`);
+      setSelectedCommitRowKeys([]);
+      fetchCommits();
+    } catch (err) {
+      message.error(err.response?.data?.error || 'Bulk mark unsuitable failed');
+    }
+  };
+
   const handleCancelReserve = async (commitId) => {
     setActionLoading({ ...actionLoading, [`cancel-${commitId}`]: true });
     try {
@@ -1370,15 +1404,30 @@ const CommitsTable = () => {
               </Button>
             )}
 
-            <Button
-              type="primary"
-              icon={<CheckCircleOutlined />}
-              onClick={handleBulkReserve}
-              disabled={selectedCommitRowKeys.length === 0}
-              style={{ marginBottom: 16 }}
-            >
-              Reserve selected ({selectedCommitRowKeys.length})
-            </Button>
+            <Space wrap style={{ marginBottom: 16, marginLeft:12 }}>
+              <Button
+                type="primary"
+                icon={<CheckCircleOutlined />}
+                onClick={handleBulkReserve}
+                disabled={selectedCommitRowKeys.length === 0}
+              >
+                Reserve selected ({selectedCommitRowKeys.length})
+              </Button>
+              <Button
+                icon={<BookOutlined />}
+                onClick={handleBulkAddToMemo}
+                disabled={selectedCommitRowKeys.length === 0}
+              >
+                Add to memo ({selectedCommitRowKeys.length})
+              </Button>
+              <Button
+                icon={<ExclamationCircleOutlined />}
+                onClick={handleBulkMarkUnsuitable}
+                disabled={selectedCommitRowKeys.length === 0}
+              >
+                Mark as unsuitable ({selectedCommitRowKeys.length})
+              </Button>
+            </Space>
 
         <Table
           rowSelection={{

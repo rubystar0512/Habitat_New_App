@@ -65,6 +65,8 @@ const ReservationsTable = () => {
   });
   const [repoWinRates, setRepoWinRates] = useState([]);
   const [priorityUpdating, setPriorityUpdating] = useState({});
+  const [selectedRowKeys, setSelectedRowKeys] = useState([]);
+  const [bulkReleaseLoading, setBulkReleaseLoading] = useState(false);
 
   useEffect(() => {
     fetchReservations();
@@ -95,6 +97,12 @@ const ReservationsTable = () => {
       const response = await api.get('/reservations', { params });
       setReservations(response.data.reservations || []);
       setPagination(prev => ({ ...prev, total: response.data.total || 0 }));
+      if (response.data.stats) {
+        setStats({
+          total: response.data.stats.total ?? 0,
+          released: response.data.stats.released ?? 0
+        });
+      }
     } catch (err) {
       console.error('Failed to fetch reservations:', err);
       message.error(err.response?.data?.error || 'Failed to fetch reservations');
@@ -108,7 +116,7 @@ const ReservationsTable = () => {
     try {
       const response = await api.post('/reservations/sync');
       const { synced, updated, errors } = response.data;
-      
+
       let messageText = '';
       if (synced > 0 || updated > 0) {
         messageText = `Synced ${synced} new reservations`;
@@ -119,12 +127,12 @@ const ReservationsTable = () => {
       } else {
         message.info('No new reservations to sync');
       }
-      
+
       if (errors && errors.length > 0) {
         console.warn('Sync errors:', errors);
         message.warning(`${errors.length} error(s) occurred during sync. Check console for details.`);
       }
-      
+
       await fetchReservations();
     } catch (err) {
       console.error('Failed to sync reservations:', err);
@@ -209,6 +217,24 @@ const ReservationsTable = () => {
     handleFilterChange('status', checked ? 'reserved' : undefined);
   };
 
+  const handleBulkRelease = async () => {
+    if (selectedRowKeys.length === 0) {
+      message.warning('Select at least one reservation');
+      return;
+    }
+    setBulkReleaseLoading(true);
+    try {
+      const res = await api.delete('/reservations/bulk', { data: { ids: selectedRowKeys } });
+      message.success(res.data.message || `Released ${res.data.released} reservation(s)`);
+      setSelectedRowKeys([]);
+      await fetchReservations();
+    } catch (err) {
+      message.error(err.response?.data?.error || 'Bulk release failed');
+    } finally {
+      setBulkReleaseLoading(false);
+    }
+  };
+
   // Get unique accounts and repos for filters
   const accounts = useMemo(() => {
     const unique = new Set();
@@ -231,31 +257,31 @@ const ReservationsTable = () => {
     let filtered = reservations;
 
     if (filters.account) {
-      filtered = filtered.filter(r => 
+      filtered = filtered.filter(r =>
         (r.account_name || '').toLowerCase().includes(filters.account.toLowerCase())
       );
     }
 
     if (filters.repo) {
-      filtered = filtered.filter(r => 
+      filtered = filtered.filter(r =>
         (r.repo_name || '').toLowerCase().includes(filters.repo.toLowerCase())
       );
     }
 
     if (filters.merged_commit) {
-      filtered = filtered.filter(r => 
+      filtered = filtered.filter(r =>
         (r.merged_commit || '').toLowerCase().includes(filters.merged_commit.toLowerCase())
       );
     }
 
     if (filters.base_commit) {
-      filtered = filtered.filter(r => 
+      filtered = filtered.filter(r =>
         (r.base_commit || '').toLowerCase().includes(filters.base_commit.toLowerCase())
       );
     }
 
     if (filters.pr_number) {
-      filtered = filtered.filter(r => 
+      filtered = filtered.filter(r =>
         String(r.pr_number || '').includes(filters.pr_number)
       );
     }
@@ -350,7 +376,7 @@ const ReservationsTable = () => {
                       e.stopPropagation();
                       window.open(repoUrl, '_blank');
                     }}
-                    style={{ 
+                    style={{
                       color: 'rgb(148, 163, 184)',
                       padding: '0 4px',
                       height: 'auto',
@@ -381,9 +407,9 @@ const ReservationsTable = () => {
         const commitUrl = repoName ? `https://github.com/${repoName}/commit/${text}` : null;
         return (
           <Space>
-            <Text 
-              style={{ 
-                color: 'rgb(148, 163, 184)', 
+            <Text
+              style={{
+                color: 'rgb(148, 163, 184)',
                 fontSize: 12,
                 fontFamily: 'monospace'
               }}
@@ -409,7 +435,7 @@ const ReservationsTable = () => {
                     e.stopPropagation();
                     window.open(commitUrl, '_blank');
                   }}
-                  style={{ 
+                  style={{
                     color: 'rgb(148, 163, 184)',
                     padding: '0 4px',
                     height: 'auto',
@@ -434,9 +460,9 @@ const ReservationsTable = () => {
         const commitUrl = repoName ? `https://github.com/${repoName}/commit/${text}` : null;
         return (
           <Space>
-            <Text 
-              style={{ 
-                color: 'rgb(148, 163, 184)', 
+            <Text
+              style={{
+                color: 'rgb(148, 163, 184)',
                 fontSize: 12,
                 fontFamily: 'monospace'
               }}
@@ -462,7 +488,7 @@ const ReservationsTable = () => {
                     e.stopPropagation();
                     window.open(commitUrl, '_blank');
                   }}
-                  style={{ 
+                  style={{
                     color: 'rgb(148, 163, 184)',
                     padding: '0 4px',
                     height: 'auto',
@@ -500,7 +526,7 @@ const ReservationsTable = () => {
                     e.stopPropagation();
                     window.open(prUrl, '_blank');
                   }}
-                  style={{ 
+                  style={{
                     color: 'rgb(148, 163, 184)',
                     padding: '0 4px',
                     height: 'auto',
@@ -572,10 +598,10 @@ const ReservationsTable = () => {
         const isExpiringSoon = dayjs(date).diff(dayjs(), 'hours') < 24;
         return (
           <Tooltip title={dayjs(date).format('YYYY-MM-DD HH:mm:ss')}>
-            <Text 
-              style={{ 
-                color: isExpired ? '#ef4444' : isExpiringSoon ? '#f59e0b' : 'rgb(148, 163, 184)', 
-                fontSize: 12 
+            <Text
+              style={{
+                color: isExpired ? '#ef4444' : isExpiringSoon ? '#f59e0b' : 'rgb(148, 163, 184)',
+                fontSize: 12
               }}
             >
               {isExpired ? 'Expired' : dayjs(date).fromNow()}
@@ -617,7 +643,7 @@ const ReservationsTable = () => {
       render: (_, record) => {
         const isReleasing = releasing[record.id];
         const canRelease = record.status === 'reserved' || record.status === 'failed';
-        
+
         return (
           <Space>
             {canRelease && (
@@ -637,7 +663,7 @@ const ReservationsTable = () => {
                     loading={isReleasing}
                     disabled={isReleasing}
                     danger
-                    style={{ 
+                    style={{
                       color: '#ef4444',
                       fontSize: 12,
                       padding: '0 4px'
@@ -701,9 +727,18 @@ const ReservationsTable = () => {
             </Space>
           </Col>
         </Row>
-        {/* Stats - Total Reservations & Total Released + Show only reserved checkbox */}
+        {/* Stats - Total Reservations & Total Released + Show only reserved checkbox + Release selected */}
         <Row align="middle" style={{ marginBottom: 16, gap: 16, flexWrap: 'wrap' }}>
           <Space size="middle" wrap>
+            <Button
+              danger
+              icon={<CloseCircleOutlined />}
+              onClick={handleBulkRelease}
+              disabled={selectedRowKeys.length === 0}
+              loading={bulkReleaseLoading}
+            >
+              Release selected ({selectedRowKeys.length})
+            </Button>
             <Checkbox
               checked={showOnlyReserved}
               onChange={handleShowOnlyReservedChange}
@@ -843,6 +878,13 @@ const ReservationsTable = () => {
           <Skeleton active paragraph={{ rows: 10 }} />
         ) : (
           <Table
+            rowSelection={{
+              selectedRowKeys: selectedRowKeys,
+              onChange: (keys) => setSelectedRowKeys(keys),
+              getCheckboxProps: (record) => ({
+                disabled: record.status !== 'reserved' && record.status !== 'failed',
+              }),
+            }}
             columns={columns}
             dataSource={filteredReservations}
             rowKey="id"
@@ -857,7 +899,16 @@ const ReservationsTable = () => {
               },
               pageSizeOptions: ['10', '20', '50', '100']
             }}
-            scroll={{ x: 'max-content' }}
+            scroll={{
+              x: 'max-content',
+              y: 'calc(55vh)',
+            }}
+            sticky={{
+              offsetHeader: 0,
+            }}
+            style={{
+              background: '#1e293b',
+            }}
             onChange={(pagination, filters, sorter) => {
               if (sorter.field) {
                 setSortConfig({
