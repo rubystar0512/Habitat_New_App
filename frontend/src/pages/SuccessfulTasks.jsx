@@ -35,7 +35,8 @@ import {
   LinkOutlined,
   FilterOutlined,
   EditOutlined,
-  DeleteOutlined
+  DeleteOutlined,
+  SearchOutlined
 } from '@ant-design/icons';
 import api from '../config/api';
 import { useAuth } from '../contexts/AuthContext';
@@ -73,6 +74,10 @@ const SuccessfulTasks = () => {
   const [basePatchValue, setBasePatchValue] = useState('');
   const [goldenPatchValue, setGoldenPatchValue] = useState('');
   const [testPatchValue, setTestPatchValue] = useState('');
+  const [similarModalVisible, setSimilarModalVisible] = useState(false);
+  const [similarCommits, setSimilarCommits] = useState([]);
+  const [similarLoading, setSimilarLoading] = useState(false);
+  const [similarSourceCommit, setSimilarSourceCommit] = useState(null);
 
   useEffect(() => {
     fetchTasks();
@@ -242,6 +247,24 @@ const SuccessfulTasks = () => {
     } catch (err) {
       console.error('Failed to fetch task details:', err);
       message.error(err.response?.data?.error || 'Failed to fetch task details');
+    }
+  };
+
+  const handleFindSimilarCommits = async (commitId) => {
+    if (!commitId) return;
+    setSimilarLoading(true);
+    setSimilarSourceCommit(null);
+    setSimilarCommits([]);
+    setSimilarModalVisible(true);
+    try {
+      const res = await api.get(`/commits/${commitId}/similar`, { params: { limit: 20 } });
+      setSimilarSourceCommit(res.data.commit);
+      setSimilarCommits(res.data.similar || []);
+    } catch (err) {
+      message.error(err.response?.data?.error || 'Failed to load similar commits');
+      setSimilarModalVisible(false);
+    } finally {
+      setSimilarLoading(false);
     }
   };
 
@@ -481,6 +504,17 @@ const SuccessfulTasks = () => {
                 style={{ padding: '0 4px', height: 'auto' }}
               />
             </Tooltip>
+            {record.commit?.id && (
+              <Tooltip title="Find similar commits (by scores)">
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<SearchOutlined />}
+                  onClick={() => handleFindSimilarCommits(record.commit.id)}
+                  style={{ padding: '0 4px', height: 'auto' }}
+                />
+              </Tooltip>
+            )}
             {canEdit && (
               <Tooltip title="Edit">
                 <Button
@@ -1110,6 +1144,52 @@ const SuccessfulTasks = () => {
             </Tabs>
           </div>
         )}
+      </Modal>
+
+      <Modal
+        title="Find similar commits"
+        open={similarModalVisible}
+        onCancel={() => setSimilarModalVisible(false)}
+        footer={[<Button key="close" onClick={() => setSimilarModalVisible(false)}>Close</Button>]}
+        width={800}
+        destroyOnClose
+      >
+        {similarLoading ? (
+          <div style={{ padding: 24, textAlign: 'center' }}>Loading similar commits…</div>
+        ) : similarSourceCommit ? (
+          <>
+            <Text type="secondary" style={{ display: 'block', marginBottom: 12 }}>
+              Similar to commit id {similarSourceCommit.id} (scores: H {similarSourceCommit.habitateScore ?? '—'}, S {similarSourceCommit.suitabilityScore ?? '—'}, D {similarSourceCommit.difficultyScore ?? '—'})
+            </Text>
+            <Table
+              size="small"
+              dataSource={similarCommits}
+              rowKey="id"
+              pagination={false}
+              scroll={{ y: 360 }}
+              columns={[
+                { title: 'ID', dataIndex: 'id', width: 70, render: (id) => <Text code>{id}</Text> },
+                { title: 'Merged', dataIndex: 'mergedCommit', width: 100, render: (t) => t ? <Text code>{String(t).slice(0, 8)}</Text> : '—' },
+                { title: 'Repo', key: 'repo', width: 180, render: (_, r) => r.repo?.fullName || r.repo?.repoName || '—' },
+                { title: 'Status', dataIndex: 'status', width: 120, render: (s) => {
+                  if (!s) return '—';
+                  const statusConfig = {
+                    paid_out: { color: 'green', label: 'paid_out' },
+                    too_easy: { color: 'orange', label: 'too_easy' },
+                    already_reserved: { color: 'purple', label: 'already reserved' },
+                    reserved: { color: 'gold', label: 'reserved' },
+                    available: { color: 'blue', label: 'available' }
+                  };
+                  const config = statusConfig[s] || { color: 'default', label: s };
+                  return <Tag color={config.color}>{config.label}</Tag>;
+                } },
+                { title: 'H', dataIndex: 'habitateScore', width: 60 },
+                { title: 'S', dataIndex: 'suitabilityScore', width: 60 },
+                { title: 'D', dataIndex: 'difficultyScore', width: 60 }
+              ]}
+            />
+          </>
+        ) : null}
       </Modal>
     </div>
   );

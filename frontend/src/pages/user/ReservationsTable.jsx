@@ -7,6 +7,7 @@ import {
   Space,
   Typography,
   Input,
+  InputNumber,
   message,
   Select,
   Tooltip,
@@ -24,7 +25,8 @@ import {
   CheckCircleOutlined,
   CloseCircleOutlined,
   SyncOutlined,
-  ClockCircleOutlined
+  ClockCircleOutlined,
+  ThunderboltOutlined
 } from '@ant-design/icons';
 import api from '../../config/api';
 import dayjs from 'dayjs';
@@ -59,10 +61,24 @@ const ReservationsTable = () => {
     field: 'reservedAt',
     order: 'DESC'
   });
+  const [repoWinRates, setRepoWinRates] = useState([]);
+  const [priorityUpdating, setPriorityUpdating] = useState({});
 
   useEffect(() => {
     fetchReservations();
   }, [pagination.current, pagination.pageSize, filters.status, sortConfig.field, sortConfig.order]);
+
+  useEffect(() => {
+    const fetchWinRates = async () => {
+      try {
+        const res = await api.get('/stats/repo-win-rates');
+        setRepoWinRates(res.data.repoWinRates || []);
+      } catch (err) {
+        console.error('Failed to fetch repo win rates:', err);
+      }
+    };
+    fetchWinRates();
+  }, []);
 
   const fetchReservations = async () => {
     setLoading(true);
@@ -126,6 +142,20 @@ const ReservationsTable = () => {
       message.error(err.response?.data?.error || 'Failed to release reservation');
     } finally {
       setReleasing(prev => ({ ...prev, [reservation.id]: false }));
+    }
+  };
+
+  const handlePriorityChange = async (reservationId, value) => {
+    if (value == null || value === '') return;
+    setPriorityUpdating(prev => ({ ...prev, [reservationId]: true }));
+    try {
+      await api.patch(`/reservations/${reservationId}`, { priority: value });
+      message.success('Priority updated');
+      await fetchReservations();
+    } catch (err) {
+      message.error(err.response?.data?.error || 'Failed to update priority');
+    } finally {
+      setPriorityUpdating(prev => ({ ...prev, [reservationId]: false }));
     }
   };
 
@@ -225,37 +255,107 @@ const ReservationsTable = () => {
     return filtered;
   }, [reservations, filters]);
 
+  const repoWinRateMap = useMemo(
+    () => new Map((repoWinRates || []).map(r => [r.repoId, r])),
+    [repoWinRates]
+  );
+
   const columns = [
+    {
+      title: (
+        <Tooltip title="Edit 0–100. Suggested value is auto-calculated from habitate, suitability, difficulty, and pattern (single-file 200+, multi-file 300+).">
+          <span style={{ cursor: 'help' }}>Priority</span>
+        </Tooltip>
+      ),
+      dataIndex: 'priority',
+      key: 'priority',
+      width: 160,
+      fixed: 'left',
+      sorter: true,
+      render: (val, record) => {
+        const current = val != null ? val : 0;
+        const suggested = record.suggestedPriority;
+        const isApplying = priorityUpdating[record.id];
+        const matchesSuggested = suggested != null && suggested === current;
+        return (
+          <Space size="small" wrap={false}>
+            <InputNumber
+              min={0}
+              max={100}
+              value={current}
+              size="small"
+              style={{ width: 60 }}
+              loading={isApplying}
+              onChange={(v) => {
+                if (v != null && !Number.isNaN(v)) handlePriorityChange(record.id, v);
+              }}
+            />
+            {suggested != null && (
+              matchesSuggested ? (
+                <Tooltip title="Your priority matches the auto-suggested value">
+                  <Text type="secondary" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
+                    <CheckCircleOutlined style={{ marginRight: 4, color: 'var(--ant-color-success)' }} />
+                    Auto
+                  </Text>
+                </Tooltip>
+              ) : (
+                <Tooltip title={`Apply suggested priority (${suggested}) from scores + pattern`}>
+                  <Button
+                    type="primary"
+                    ghost
+                    size="small"
+                    icon={<ThunderboltOutlined />}
+                    loading={isApplying}
+                    onClick={() => handlePriorityChange(record.id, suggested)}
+                    style={{ minWidth: 32, padding: '0 6px' }}
+                  >
+                    {suggested}
+                  </Button>
+                </Tooltip>
+              )
+            )}
+          </Space>
+        );
+      }
+    },
     {
       title: 'Repo',
       dataIndex: 'repo_name',
       key: 'repo_name',
-      width: 200,
+      width: 220,
       fixed: 'left',
       render: (text, record) => {
         const repoName = text || '-';
         const repoUrl = repoName !== '-' ? `https://github.com/${repoName}` : null;
+        const winInfo = record.repo_id ? repoWinRateMap.get(record.repo_id) : null;
         return (
-          <Space>
-            <Text style={{ color: 'rgb(241, 245, 249)', fontSize: 13 }}>{repoName}</Text>
-            {repoUrl && (
-              <Tooltip title={`Open ${repoName} on GitHub`}>
-                <Button
-                  type="text"
-                  size="small"
-                  icon={<LinkOutlined />}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    window.open(repoUrl, '_blank');
-                  }}
-                  style={{ 
-                    color: 'rgb(148, 163, 184)',
-                    padding: '0 4px',
-                    height: 'auto',
-                    fontSize: 12
-                  }}
-                />
-              </Tooltip>
+          <Space direction="vertical" size={0}>
+            <Space>
+              <Text style={{ color: 'rgb(241, 245, 249)', fontSize: 13 }}>{repoName}</Text>
+              {repoUrl && (
+                <Tooltip title={`Open ${repoName} on GitHub`}>
+                  <Button
+                    type="text"
+                    size="small"
+                    icon={<LinkOutlined />}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      window.open(repoUrl, '_blank');
+                    }}
+                    style={{ 
+                      color: 'rgb(148, 163, 184)',
+                      padding: '0 4px',
+                      height: 'auto',
+                      fontSize: 12
+                    }}
+                  />
+                </Tooltip>
+              )}
+            </Space>
+            {winInfo != null && (
+              <Text type="secondary" style={{ fontSize: 11 }}>
+                This repo: {winInfo.winRate}% team win rate
+              </Text>
             )}
           </Space>
         );

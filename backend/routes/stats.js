@@ -1,6 +1,7 @@
 const express = require('express');
 const { Sequelize, Op } = require('sequelize');
 const { Commit, GitRepo, Reservation, User, SuccessfulTask, UserHabitatAccount, MemoCommit, CommitStatusCache } = require('../models');
+const { sequelize } = require('../config/database');
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
 
 const router = express.Router();
@@ -76,6 +77,52 @@ router.get('/my-stats', async (req, res, next) => {
       memoCommits: { total: memoCommits },
       accounts: { total: accounts }
     });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Repo-level win rate: team win rate by repo (paid_out commits / total commits in repo)
+router.get('/repo-win-rates', async (req, res, next) => {
+  try {
+    const [repos, paidOutByRepo] = await Promise.all([
+      GitRepo.findAll({
+        where: { isActive: true },
+        attributes: ['id', 'repoName', 'fullName']
+      }),
+      sequelize.query(
+        `SELECT c.repo_id AS repoId, COUNT(*) AS paidOutCount
+         FROM commits c
+         INNER JOIN commit_status_cache csc ON c.id = csc.commit_id AND csc.status = 'paid_out'
+         GROUP BY c.repo_id`,
+        { type: sequelize.QueryTypes.SELECT }
+      )
+    ]);
+
+    const totalByRepo = await Commit.findAll({
+      attributes: ['repoId', [sequelize.fn('COUNT', sequelize.col('id')), 'totalCount']],
+      group: ['repoId'],
+      raw: true
+    });
+
+    const totalMap = new Map(totalByRepo.map(r => [r.repoId, parseInt(r.totalCount, 10) || 0]));
+    const paidOutMap = new Map((paidOutByRepo || []).map(r => [r.repoId, parseInt(r.paidOutCount, 10) || 0]));
+
+    const repoWinRates = repos.map(repo => {
+      const total = totalMap.get(repo.id) || 0;
+      const paidOut = paidOutMap.get(repo.id) || 0;
+      const winRate = total > 0 ? Math.round((paidOut / total) * 10000) / 100 : 0;
+      return {
+        repoId: repo.id,
+        repoName: repo.repoName,
+        fullName: repo.fullName,
+        winRate,
+        paidOutCount: paidOut,
+        totalCommits: total
+      };
+    });
+
+    res.json({ repoWinRates });
   } catch (error) {
     next(error);
   }

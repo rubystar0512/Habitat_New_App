@@ -3,11 +3,14 @@ const { Op } = require('sequelize');
 const { MemoCommit, Commit, GitRepo } = require('../models');
 const { authenticateToken } = require('../middleware/auth');
 const { idParamRule, paginationRules, handleValidationErrors } = require('../middleware/validation');
+const { computePriorityFromCommit } = require('../services/priorityCalculator');
 
 const router = express.Router();
 
 // All routes require authentication
 router.use(authenticateToken);
+
+const MEMO_LIMIT = Math.max(1, parseInt(process.env.MEMO_LIMIT, 10) || 45);
 
 // Get memo commits with full commit details
 router.get('/', paginationRules, handleValidationErrors, async (req, res, next) => {
@@ -43,6 +46,7 @@ router.get('/', paginationRules, handleValidationErrors, async (req, res, next) 
         userId: memo.userId,
         commitId: memo.commitId,
         priority: memo.priority || 0,
+        suggestedPriority: commit ? computePriorityFromCommit(commit) : null,
         notes: memo.notes,
         createdAt: memo.createdAt,
         updatedAt: memo.updatedAt,
@@ -75,7 +79,8 @@ router.get('/', paginationRules, handleValidationErrors, async (req, res, next) 
       memoCommits: formattedMemos,
       total: count,
       limit,
-      offset
+      offset,
+      memoLimit: MEMO_LIMIT
     });
   } catch (error) {
     next(error);
@@ -97,12 +102,24 @@ router.post('/', async (req, res, next) => {
       return res.status(404).json({ error: 'Commit not found' });
     }
 
+    const existing = await MemoCommit.findOne({ where: { userId: req.userId, commitId: commit_id } });
+    if (!existing) {
+      const currentCount = await MemoCommit.count({ where: { userId: req.userId } });
+      if (currentCount >= MEMO_LIMIT) {
+        return res.status(403).json({
+          error: `Memo limit reached (${MEMO_LIMIT}). Remove an item to add more.`,
+          memoLimit: MEMO_LIMIT
+        });
+      }
+    }
+
+    const autoPriority = priority != null ? priority : computePriorityFromCommit(commit);
     const [memoCommit, created] = await MemoCommit.findOrCreate({
       where: { userId: req.userId, commitId: commit_id },
       defaults: { 
         userId: req.userId,
         commitId: commit_id,
-        priority: priority || 0, 
+        priority: autoPriority, 
         notes: notes || null
       }
     });

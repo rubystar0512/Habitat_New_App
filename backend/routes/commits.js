@@ -421,50 +421,68 @@ router.get('/commit-chain', requireAdmin, async (req, res, next) => {
     const repoId = req.query.repo_id ? parseInt(req.query.repo_id, 10) : null;
     const maxDepth = Math.min(Math.max(parseInt(req.query.max_depth, 10) || 10, 1), 50);
 
-    if (!baseCommit || baseCommit.length < 7) {
-      return res.status(400).json({ error: 'base_commit is required (min 7 characters)' });
+    const hasBase = baseCommit.length >= 7;
+    const hasRepo = repoId && !Number.isNaN(repoId);
+
+    if (!hasBase && !hasRepo) {
+      return res.status(400).json({ error: 'Provide base_commit (min 7 chars) or repo_id to load chains' });
     }
 
-    const repoWhere = repoId && !Number.isNaN(repoId) ? { repoId } : {};
-
-    // Fetch chain iteratively: start from base_commit (LIKE for first level), then exact match for chained merged hashes
-    const allCommits = [];
-    const baseTrim = baseCommit.trim();
-    let baseHashes = [baseTrim];
-    const useLike = baseTrim.length < 40; // partial hash: use LIKE for first level
-    const seenBases = new Set();
-
-    for (let d = 0; d < maxDepth && baseHashes.length > 0; d++) {
-      const whereClause = repoId && !Number.isNaN(repoId) ? { ...repoWhere } : {};
-      if (d === 0 && useLike) {
-        whereClause.baseCommit = { [Op.like]: `${baseTrim}%` };
-      } else {
-        whereClause.baseCommit = { [Op.in]: baseHashes };
-      }
-      const next = await Commit.findAll({
-        where: whereClause,
-        attributes: ['id', 'repoId', 'baseCommit', 'mergedCommit', 'habitateScore', 'suitabilityScore', 'difficultyScore', 'message'],
-        include: [
-          { model: GitRepo, as: 'repo', attributes: ['id', 'repoName', 'fullName'] }
-        ]
-      });
-      allCommits.push(...next);
-      baseHashes = [...new Set(next.map(c => (c.mergedCommit || '').trim()).filter(Boolean))].filter(h => !seenBases.has(h));
-      baseHashes.forEach(h => seenBases.add(h));
-    }
-
+    const repoWhere = hasRepo ? { repoId } : {};
+    let allCommits = [];
     const commitByBase = new Map();
-    allCommits.forEach(c => {
-      const key = (c.baseCommit || '').trim();
-      if (!commitByBase.has(key)) commitByBase.set(key, []);
-      commitByBase.get(key).push(c);
-    });
-    // When user sent partial hash, point root at all commits whose base starts with it
-    if (useLike) {
-      const firstLevel = allCommits.filter(c => (c.baseCommit || '').trim().startsWith(baseTrim));
-      if (firstLevel.length > 0) {
-        commitByBase.set(baseTrim, firstLevel);
+    let rootsToBuild = [];
+    let singleRootLabel = '';
+
+    if (hasBase) {
+      const baseTrim = baseCommit.trim();
+      let baseHashes = [baseTrim];
+      const useLike = baseTrim.length < 40;
+      const seenBases = new Set();
+
+      for (let d = 0; d < maxDepth && baseHashes.length > 0; d++) {
+        const whereClause = hasRepo ? { ...repoWhere } : {};
+        if (d === 0 && useLike) {
+          whereClause.baseCommit = { [Op.like]: `${baseTrim}%` };
+        } else {
+          whereClause.baseCommit = { [Op.in]: baseHashes };
+        }
+        const next = await Commit.findAll({
+          where: whereClause,
+          attributes: ['id', 'repoId', 'baseCommit', 'mergedCommit', 'habitateScore', 'suitabilityScore', 'difficultyScore', 'message'],
+          include: [{ model: GitRepo, as: 'repo', attributes: ['id', 'repoName', 'fullName'] }]
+        });
+        allCommits.push(...next);
+        baseHashes = [...new Set(next.map(c => (c.mergedCommit || '').trim()).filter(Boolean))].filter(h => !seenBases.has(h));
+        baseHashes.forEach(h => seenBases.add(h));
       }
+
+      allCommits.forEach(c => {
+        const key = (c.baseCommit || '').trim();
+        if (!commitByBase.has(key)) commitByBase.set(key, []);
+        commitByBase.get(key).push(c);
+      });
+      if (useLike) {
+        const firstLevel = allCommits.filter(c => (c.baseCommit || '').trim().startsWith(baseTrim));
+        if (firstLevel.length > 0) commitByBase.set(baseTrim, firstLevel);
+      }
+      rootsToBuild = [baseTrim];
+      singleRootLabel = (baseTrim || '').substring(0, 8) + (baseTrim.length > 8 ? '...' : '');
+    } else {
+      const repoCommits = await Commit.findAll({
+        where: { repoId },
+        attributes: ['id', 'repoId', 'baseCommit', 'mergedCommit', 'habitateScore', 'suitabilityScore', 'difficultyScore', 'message'],
+        include: [{ model: GitRepo, as: 'repo', attributes: ['id', 'repoName', 'fullName'] }]
+      });
+      allCommits = repoCommits;
+      const mergedInRepo = new Set(repoCommits.map(c => (c.mergedCommit || '').trim()).filter(Boolean));
+      allCommits.forEach(c => {
+        const key = (c.baseCommit || '').trim();
+        if (!key) return;
+        if (!commitByBase.has(key)) commitByBase.set(key, []);
+        commitByBase.get(key).push(c);
+      });
+      rootsToBuild = [...new Set(allCommits.map(c => (c.baseCommit || '').trim()).filter(Boolean))].filter(base => !mergedInRepo.has(base));
     }
 
     const statusByCommitId = new Map();
@@ -488,9 +506,9 @@ router.get('/commit-chain', requireAdmin, async (req, res, next) => {
 
       const children = [];
       for (const commit of childrenCommits) {
+        const status = statusByCommitId.get(commit.id);
         const merged = (commit.mergedCommit || '').trim();
         const childNode = buildNode(merged, depth + 1);
-        const status = statusByCommitId.get(commit.id);
         const shortMerged = (commit.mergedCommit || '').substring(0, 8);
         const label = `${shortMerged} (id:${commit.id}${status ? ` ${status}` : ''})`;
         children.push({
@@ -508,47 +526,111 @@ router.get('/commit-chain', requireAdmin, async (req, res, next) => {
         });
       }
 
-      const rootLabel = (baseCommit || '').substring(0, 8) + (baseCommit.length > 8 ? '...' : '');
+      const rootLabel = (baseHash || '').substring(0, 8) + ((baseHash || '').length > 8 ? '...' : '');
       if (depth === 0) {
         return {
-          name: children.length === 0 ? `${rootLabel} (no merge commits found)` : `${rootLabel} (root)`,
+          name: children.length === 0 ? `${rootLabel} (no merge commits)` : `${rootLabel} (root)`,
           children
         };
       }
-      return {
-        name: key.substring(0, 8),
-        children
-      };
+      return { name: key.substring(0, 8), children };
     }
 
-    const rootLabel = (baseTrim || '').substring(0, 8) + (baseTrim.length > 8 ? '...' : '');
-    const tree = buildNode(baseTrim, 0);
+    const countNodes = (n) => 1 + (n.children || []).reduce((sum, c) => sum + countNodes(c), 0);
+    const maxChainDepthFn = (n) => {
+      if (!n.children || n.children.length === 0) return 1;
+      return 1 + Math.max(...n.children.map(maxChainDepthFn));
+    };
+    const countCommitNodes = (n) => (n.commitId ? 1 : 0) + (n.children || []).reduce((sum, c) => sum + countCommitNodes(c), 0);
 
-    if (!tree) {
+    const trees = [];
+    for (const rootHash of rootsToBuild) {
+      const tree = buildNode(rootHash, 0);
+      if (tree && (tree.children?.length > 0 || hasBase)) {
+        trees.push(tree);
+      }
+    }
+
+    if (hasBase) {
+      const singleTree = trees[0] || { name: `${singleRootLabel} (no merge commits found)`, children: [] };
       return res.json({
-        tree: { name: `${rootLabel} (no merge commits found)`, children: [] },
-        totalNodes: 0,
-        chainDepth: 0,
-        totalCommitNodes: 0
+        tree: singleTree,
+        trees: null,
+        totalNodes: countNodes(singleTree),
+        chainDepth: singleTree.children?.length ? maxChainDepthFn(singleTree) : 0,
+        totalCommitNodes: countCommitNodes(singleTree)
       });
     }
 
-    // Total nodes in tree (root + all descendants) - can be many if multiple branches
-    const countNodes = (n) => 1 + (n.children || []).reduce((sum, c) => sum + countNodes(c), 0);
-    const totalNodes = countNodes(tree);
+    let totalNodes = 0;
+    let chainDepth = 0;
+    let totalCommitNodes = 0;
+    for (const t of trees) {
+      totalNodes += countNodes(t);
+      chainDepth = Math.max(chainDepth, maxChainDepthFn(t));
+      totalCommitNodes += countCommitNodes(t);
+    }
+    res.json({
+      tree: trees.length === 1 ? trees[0] : null,
+      trees: trees.length > 1 ? trees : null,
+      totalNodes,
+      chainDepth,
+      totalCommitNodes
+    });
+  } catch (error) {
+    next(error);
+  }
+});
 
-    // Longest path length (root = 1; linear chain root->A->B has chainDepth 3) - matches "commit chain" length
-    const maxChainDepth = (n) => {
-      if (!n.children || n.children.length === 0) return 1;
-      return 1 + Math.max(...n.children.map(maxChainDepth));
-    };
-    const chainDepth = maxChainDepth(tree);
+// Find similar commits by score patterns (habitate, suitability, difficulty)
+router.get('/:id/similar', idParamRule, handleValidationErrors, async (req, res, next) => {
+  try {
+    const commitId = parseInt(req.params.id, 10);
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 50);
+    const sameRepo = req.query.same_repo === 'true' || req.query.same_repo === '1';
 
-    // Count commit nodes only (exclude root, which has no commitId)
-    const countCommitNodes = (n) => (n.commitId ? 1 : 0) + (n.children || []).reduce((sum, c) => sum + countCommitNodes(c), 0);
-    const totalCommitNodes = countCommitNodes(tree);
+    const commit = await Commit.findByPk(commitId, {
+      attributes: ['id', 'repoId', 'habitateScore', 'suitabilityScore', 'difficultyScore', 'mergedCommit', 'baseCommit', 'message', 'commitDate'],
+      include: [{ model: GitRepo, as: 'repo', attributes: ['id', 'repoName', 'fullName'] }]
+    });
+    if (!commit) {
+      return res.status(404).json({ error: 'Commit not found' });
+    }
 
-    res.json({ tree, totalNodes, chainDepth, totalCommitNodes });
+    const h = commit.habitateScore != null ? Number(commit.habitateScore) : 0;
+    const s = commit.suitabilityScore != null ? Number(commit.suitabilityScore) : 0;
+    const d = commit.difficultyScore != null ? Number(commit.difficultyScore) : 0;
+
+    const where = { id: { [Op.ne]: commitId } };
+    if (sameRepo && commit.repoId) where.repoId = commit.repoId;
+
+    const similar = await Commit.findAll({
+      where,
+      limit,
+      attributes: ['id', 'repoId', 'habitateScore', 'suitabilityScore', 'difficultyScore', 'mergedCommit', 'baseCommit', 'message', 'commitDate', 'additions', 'deletions', 'fileChanges'],
+      include: [{ model: GitRepo, as: 'repo', attributes: ['id', 'repoName', 'fullName'], where: { isActive: true }, required: true }],
+      order: [
+        [sequelize.literal(`(ABS(COALESCE(habitate_score, 0) - ${h}) + ABS(COALESCE(suitability_score, 0) - ${s}) + ABS(COALESCE(difficulty_score, 0) - ${d}))`), 'ASC']
+      ]
+    });
+
+    const similarIds = similar.map(c => c.id);
+    const statusByCommitId = new Map();
+    if (similarIds.length > 0) {
+      const statuses = await CommitStatusCache.findAll({
+        where: { commitId: { [Op.in]: similarIds } },
+        attributes: ['commitId', 'status']
+      });
+      statuses.forEach(st => statusByCommitId.set(st.commitId, st.status));
+    }
+
+    const similarWithStatus = similar.map(c => {
+      const row = c.toJSON();
+      row.status = statusByCommitId.get(c.id) || null;
+      return row;
+    });
+
+    res.json({ commit: commit.toJSON(), similar: similarWithStatus });
   } catch (error) {
     next(error);
   }
@@ -623,6 +705,8 @@ router.post('/:id/unmark-unsuitable', idParamRule, handleValidationErrors, async
   }
 });
 
+const MEMO_LIMIT = Math.max(1, parseInt(process.env.MEMO_LIMIT, 10) || 45);
+
 // Add commit to memo
 router.post('/:id/memo', idParamRule, handleValidationErrors, async (req, res, next) => {
   try {
@@ -650,6 +734,17 @@ router.post('/:id/memo', idParamRule, handleValidationErrors, async (req, res, n
           username: existingMemo.user?.username || null
         }
       });
+    }
+
+    const alreadyInMyMemo = await MemoCommit.findOne({ where: { userId: req.userId, commitId } });
+    if (!alreadyInMyMemo) {
+      const currentCount = await MemoCommit.count({ where: { userId: req.userId } });
+      if (currentCount >= MEMO_LIMIT) {
+        return res.status(403).json({
+          error: `Memo limit reached (${MEMO_LIMIT}). Remove an item to add more.`,
+          memoLimit: MEMO_LIMIT
+        });
+      }
     }
 
     const [memoCommit, created] = await MemoCommit.findOrCreate({
@@ -796,6 +891,102 @@ router.delete('/:id/reserve', idParamRule, handleValidationErrors, async (req, r
     });
 
     res.json({ message: 'Reservation cancelled successfully' });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Gift commit: send reserved commit to another team member (release from sender, reserve on receiver)
+router.post('/:id/gift', idParamRule, handleValidationErrors, async (req, res, next) => {
+  try {
+    const commitId = parseInt(req.params.id, 10);
+    const senderId = parseInt(req.userId, 10);
+    const { receiver_user_id, receiver_account_id } = req.body;
+
+    if (!receiver_user_id) {
+      return res.status(400).json({ error: 'receiver_user_id is required' });
+    }
+    if (!receiver_account_id) {
+      return res.status(400).json({ error: 'receiver_account_id is required – sender must select the receiver\'s Habitat account' });
+    }
+    const receiverId = parseInt(receiver_user_id, 10);
+    if (receiverId === senderId) {
+      return res.status(400).json({ error: 'Cannot gift commit to yourself' });
+    }
+
+    const senderReservation = await Reservation.findOne({
+      where: {
+        commitId,
+        userId: senderId,
+        status: 'reserved'
+      },
+      include: [{ model: UserHabitatAccount, as: 'account' }]
+    });
+
+    if (!senderReservation) {
+      return res.status(404).json({ error: 'You do not have this commit reserved' });
+    }
+
+    const commit = await Commit.findByPk(commitId, {
+      include: [{ model: GitRepo, as: 'repo', attributes: ['id', 'habitatRepoId'] }]
+    });
+    if (!commit || !commit.repo?.habitatRepoId) {
+      return res.status(400).json({ error: 'Commit or repo not found' });
+    }
+
+    const receiverAccount = await UserHabitatAccount.findOne({
+      where: { id: receiver_account_id, userId: receiverId, isActive: true }
+    });
+    if (!receiverAccount) {
+      return res.status(404).json({ error: 'Receiver account not found or inactive' });
+    }
+
+    const senderApiUrl = senderReservation.account.apiUrl || process.env.HABITAT_API_URL || 'https://code.habitat.inc';
+
+    if (senderReservation.habitatReservationId) {
+      const deleteResult = await deleteReservation(
+        senderReservation.account.apiToken,
+        senderApiUrl,
+        senderReservation.habitatReservationId
+      );
+      if (!deleteResult.success) {
+        return res.status(400).json({ error: deleteResult.error || 'Failed to release commit on Habitat' });
+      }
+    }
+
+    await senderReservation.update({
+      status: 'released',
+      cancelledAt: new Date()
+    });
+
+    const receiverApiUrl = receiverAccount.apiUrl || process.env.HABITAT_API_URL || 'https://code.habitat.inc';
+    const claimResult = await claim(
+      receiverAccount.apiToken,
+      receiverApiUrl,
+      commit.repo.habitatRepoId,
+      commit.baseCommit
+    );
+
+    if (!claimResult.success) {
+      return res.status(400).json({
+        error: claimResult.error || 'Failed to reserve commit for receiver. Commit may now be available on Habitat.'
+      });
+    }
+
+    const newReservation = await Reservation.create({
+      userId: receiverId,
+      accountId: receiverAccount.id,
+      commitId,
+      habitatReservationId: claimResult.reservationId,
+      status: 'reserved',
+      expiresAt: claimResult.expiresAt,
+      reservedAt: new Date()
+    });
+
+    res.json({
+      message: 'Commit gifted successfully',
+      reservation: newReservation
+    });
   } catch (error) {
     next(error);
   }

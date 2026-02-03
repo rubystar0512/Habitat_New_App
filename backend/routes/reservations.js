@@ -4,6 +4,7 @@ const { Reservation, Commit, UserHabitatAccount, GitRepo } = require('../models'
 const { authenticateToken } = require('../middleware/auth');
 const { createReservationRules, idParamRule, paginationRules, handleValidationErrors } = require('../middleware/validation');
 const habitatApiService = require('../services/habitatApi');
+const { computePriorityFromCommit } = require('../services/priorityCalculator');
 
 const router = express.Router();
 
@@ -45,7 +46,8 @@ router.get('/', paginationRules, handleValidationErrors, async (req, res, next) 
         'habitate_score': 'commit.habitate_score',
         'file_changes': 'commit.file_changes',
         'additions': 'commit.additions',
-        'deletions': 'commit.deletions'
+        'deletions': 'commit.deletions',
+        'priority': 'priority'
       };
       
       const dbField = fieldMap[sortBy] || sortBy;
@@ -88,6 +90,8 @@ router.get('/', paginationRules, handleValidationErrors, async (req, res, next) 
         expiresAt: reservation.expiresAt,
         reservedAt: reservation.reservedAt,
         cancelledAt: reservation.cancelledAt, // Model field maps to released_at in database
+        priority: reservation.priority != null ? reservation.priority : 0,
+        suggestedPriority: commit ? computePriorityFromCommit(commit) : null,
         createdAt: reservation.createdAt,
         updatedAt: reservation.updatedAt,
         // Account info
@@ -175,18 +179,46 @@ router.post('/', createReservationRules, handleValidationErrors, async (req, res
       return res.status(400).json({ error: habitatReservation.error || 'Failed to reserve commit' });
     }
 
-    // Create reservation record
+    const autoPriority = computePriorityFromCommit(commitWithRepo);
+
     const reservation = await Reservation.create({
       userId: req.userId,
       accountId,
       commitId,
       habitatReservationId: habitatReservation.reservationId,
-      status: 'reserved', // Database uses 'reserved' status
+      status: 'reserved',
       expiresAt: habitatReservation.expiresAt,
-      reservedAt: new Date()
+      reservedAt: new Date(),
+      priority: autoPriority
     });
 
     res.status(201).json({ reservation });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Update reservation (e.g. user-customized priority)
+router.patch('/:id', idParamRule, handleValidationErrors, async (req, res, next) => {
+  try {
+    const reservation = await Reservation.findOne({
+      where: { id: req.params.id, userId: req.userId }
+    });
+
+    if (!reservation) {
+      return res.status(404).json({ error: 'Reservation not found' });
+    }
+
+    const { priority } = req.body;
+    const updates = {};
+    if (typeof priority === 'number' || (priority !== undefined && priority !== null)) {
+      updates.priority = Math.min(100, Math.max(0, parseInt(priority, 10) || 0));
+    }
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ error: 'No valid fields to update (e.g. priority 0-100)' });
+    }
+    await reservation.update(updates);
+    res.json({ message: 'Reservation updated', reservation });
   } catch (error) {
     next(error);
   }

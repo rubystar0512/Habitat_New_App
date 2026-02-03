@@ -1,0 +1,34 @@
+/**
+ * Compute priority 0-100 from commit scores and pattern.
+ * Used for reservations and memos: habitate, suitability, difficulty, and pattern (single-file 200+, multi-file 300+).
+ */
+function computePriorityFromCommit(commit) {
+  if (!commit) return 0;
+
+  const h = commit.habitateScore != null ? Number(commit.habitateScore) : 0;
+  const s = commit.suitabilityScore != null ? Number(commit.suitabilityScore) : 0;
+  const d = commit.difficultyScore != null ? Number(commit.difficultyScore) : 0;
+  const fileChanges = commit.fileChanges != null ? parseInt(commit.fileChanges, 10) : 0;
+  const additions = commit.additions != null ? parseInt(commit.additions, 10) : 0;
+
+  // Habitate: 0-200 -> 0-40 (score/5, cap 40)
+  const habitatePart = Math.min(40, Math.max(0, h / 5));
+
+  // Suitability: 0-1 or 0-100 -> 0-30 (if value > 1 treat as 0-100 scale)
+  const sNorm = s <= 1 ? s * 100 : s;
+  const suitabilityPart = Math.min(30, Math.max(0, (sNorm / 100) * 30));
+
+  // Difficulty: 0-1 or 0-100 -> 0-20 (medium-high difficulty can be valuable)
+  const dNorm = d <= 1 ? d * 100 : d;
+  const difficultyPart = Math.min(20, Math.max(0, (dNorm / 100) * 20));
+
+  // Pattern bonus: single-file 200+ additions, multi-file 300+
+  let patternBonus = 0;
+  if (fileChanges === 1 && additions >= 200) patternBonus += 5;
+  if (fileChanges >= 3 && additions >= 300) patternBonus += 5;
+
+  const raw = habitatePart + suitabilityPart + difficultyPart + patternBonus;
+  return Math.min(100, Math.max(0, Math.round(raw)));
+}
+
+module.exports = { computePriorityFromCommit };

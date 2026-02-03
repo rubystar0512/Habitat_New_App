@@ -1,5 +1,6 @@
 const express = require('express');
-const { User } = require('../models');
+const { Op } = require('sequelize');
+const { User, UserHabitatAccount } = require('../models');
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
 const { idParamRule, paginationRules, handleValidationErrors } = require('../middleware/validation');
 
@@ -7,6 +8,31 @@ const router = express.Router();
 
 // All routes require authentication
 router.use(authenticateToken);
+
+// Get team members for gift/transfer (id, username) - only users with at least one active Habitat account
+router.get('/team-members', async (req, res, next) => {
+  try {
+    const users = await User.findAll({
+      where: {
+        id: { [Op.ne]: req.userId },
+        isApproved: true
+      },
+      attributes: ['id', 'username'],
+      include: [{
+        model: UserHabitatAccount,
+        as: 'habitatAccounts',
+        attributes: [],
+        where: { isActive: true },
+        required: true
+      }],
+      order: [['username', 'ASC']],
+      distinct: true
+    });
+    res.json({ teamMembers: users });
+  } catch (error) {
+    next(error);
+  }
+});
 
 // Get all users (admin only)
 router.get('/', requireAdmin, paginationRules, handleValidationErrors, async (req, res, next) => {
@@ -27,6 +53,24 @@ router.get('/', requireAdmin, paginationRules, handleValidationErrors, async (re
       limit,
       offset
     });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Get a team member's active Habitat accounts (for gift commit – sender selects receiver's account)
+router.get('/:id/accounts', idParamRule, handleValidationErrors, async (req, res, next) => {
+  try {
+    const userId = parseInt(req.params.id, 10);
+    if (userId === parseInt(req.userId, 10)) {
+      return res.status(400).json({ error: 'Use /api/accounts for your own accounts' });
+    }
+    const accounts = await UserHabitatAccount.findAll({
+      where: { userId, isActive: true },
+      attributes: ['id', 'accountName'],
+      order: [['accountName', 'ASC']]
+    });
+    res.json({ accounts });
   } catch (error) {
     next(error);
   }

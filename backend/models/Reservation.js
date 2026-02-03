@@ -63,6 +63,11 @@ const Reservation = sequelize.define('Reservation', {
     type: DataTypes.DATE,
     allowNull: true,
     field: 'released_at' // Database uses 'released_at' instead of 'cancelled_at'
+  },
+  priority: {
+    type: DataTypes.INTEGER,
+    defaultValue: 0,
+    allowNull: true
   }
 }, {
   tableName: 'reservations',
@@ -74,7 +79,8 @@ const Reservation = sequelize.define('Reservation', {
     { fields: ['commit_id'] },
     { fields: ['status'] },
     { fields: ['expires_at'] },
-    { fields: ['reservation_id'] }
+    { fields: ['reservation_id'] },
+    { fields: ['priority'] }
   ]
 });
 

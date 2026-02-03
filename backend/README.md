@@ -137,6 +137,8 @@ backend/
 
 See `.env.example` for all required environment variables.
 
+- **MEMO_LIMIT** (optional) – Max number of memo items per user. Default: `45`. Admin-configured; set in `.env` to change (e.g. `MEMO_LIMIT=45`).
+
 ## Database Models
 
 All models are defined in `models/` directory using Sequelize. See `models/index.js` for associations.

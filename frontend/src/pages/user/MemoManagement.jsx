@@ -26,6 +26,8 @@ import {
   EditOutlined,
   BookOutlined,
   ClearOutlined,
+  ThunderboltOutlined,
+  CheckCircleOutlined,
 } from '@ant-design/icons';
 import api from '../../config/api';
 import dayjs from 'dayjs';
@@ -53,11 +55,26 @@ const MemoManagement = () => {
     priority_min: null,
     priority_max: null,
   });
+  const [memoLimit, setMemoLimit] = useState(null);
+  const [repoWinRates, setRepoWinRates] = useState([]);
+  const [priorityUpdating, setPriorityUpdating] = useState({});
 
   useEffect(() => {
     fetchMemoCommits();
     fetchAccounts();
     fetchRepos();
+  }, []);
+
+  useEffect(() => {
+    const fetchWinRates = async () => {
+      try {
+        const res = await api.get('/stats/repo-win-rates');
+        setRepoWinRates(res.data.repoWinRates || []);
+      } catch (err) {
+        console.error('Failed to fetch repo win rates:', err);
+      }
+    };
+    fetchWinRates();
   }, []);
 
   const fetchAccounts = async () => {
@@ -83,6 +100,7 @@ const MemoManagement = () => {
     try {
       const response = await api.get('/memo', { params: { limit: 10000 } });
       setMemoCommits(response.data.memoCommits || []);
+      if (response.data.memoLimit != null) setMemoLimit(response.data.memoLimit);
     } catch (error) {
       message.error('Failed to fetch memo commits');
     } finally {
@@ -97,6 +115,21 @@ const MemoManagement = () => {
       fetchMemoCommits();
     } catch (error) {
       message.error(error.response?.data?.error || 'Failed to remove from memo');
+    }
+  };
+
+  const handleApplySuggestedPriority = async (memo) => {
+    const suggested = memo.suggestedPriority;
+    if (suggested == null) return;
+    setPriorityUpdating(prev => ({ ...prev, [memo.id]: true }));
+    try {
+      await api.patch(`/memo/${memo.id}`, { priority: suggested });
+      message.success('Priority updated to suggested value');
+      fetchMemoCommits();
+    } catch (err) {
+      message.error(err.response?.data?.error || 'Failed to update priority');
+    } finally {
+      setPriorityUpdating(prev => ({ ...prev, [memo.id]: false }));
     }
   };
 
@@ -199,38 +232,100 @@ const MemoManagement = () => {
     return count;
   }, [filters]);
 
+  const repoWinRateMap = useMemo(
+    () => new Map((repoWinRates || []).map(r => [r.repoId, r])),
+    [repoWinRates]
+  );
 
   const columns = [
+    {
+      title: (
+        <Tooltip title="Your priority (0–100). Suggested value is auto-calculated from scores and pattern. Click the lightning button to apply it.">
+          <span style={{ cursor: 'help' }}>Priority</span>
+        </Tooltip>
+      ),
+      dataIndex: 'priority',
+      key: 'priority',
+      width: 160,
+      fixed: 'left',
+      align: 'center',
+      sorter: (a, b) => (a.priority || 0) - (b.priority || 0),
+      render: (priority, record) => {
+        const current = priority ?? 0;
+        const suggested = record.suggestedPriority;
+        const isApplying = priorityUpdating[record.id];
+        const matchesSuggested = suggested != null && suggested === current;
+        return (
+          <Space size="small" direction="vertical" align="center" style={{ margin: 0 }}>
+            <Tag color={current >= 50 ? 'red' : current >= 20 ? 'orange' : 'default'}>
+              {current}
+            </Tag>
+            {suggested != null && (
+              matchesSuggested ? (
+                <Tooltip title="Matches auto-suggested value">
+                  <Text type="secondary" style={{ fontSize: 11 }}>
+                    <CheckCircleOutlined style={{ marginRight: 4, color: 'var(--ant-color-success)' }} />
+                    Auto
+                  </Text>
+                </Tooltip>
+              ) : (
+                <Tooltip title={`Apply suggested priority (${suggested})`}>
+                  <Button
+                    type="primary"
+                    ghost
+                    size="small"
+                    icon={<ThunderboltOutlined />}
+                    loading={isApplying}
+                    onClick={() => handleApplySuggestedPriority(record)}
+                    style={{ minWidth: 32 }}
+                  >
+                    {suggested}
+                  </Button>
+                </Tooltip>
+              )
+            )}
+          </Space>
+        );
+      },
+    },
     {
       title: 'Repo',
       dataIndex: 'repo_name',
       key: 'repo_name',
-      width: 200,
+      width: 220,
       fixed: 'left',
       sorter: (a, b) => (a.repo_name || '').localeCompare(b.repo_name || ''),
       render: (text, record) => {
         const repoName = text || '-';
         const repoUrl = repoName !== '-' ? `https://github.com/${repoName}` : null;
+        const winInfo = record.repo_id ? repoWinRateMap.get(record.repo_id) : null;
         return (
-          <Space>
-            <Text style={{ color: 'rgb(241, 245, 249)', fontSize: 13 }}>{repoName}</Text>
-            {repoUrl && (
-              <Tooltip title={`Open ${repoName} on GitHub`}>
-                <Button
-                  type="text"
-                  size="small"
-                  icon={<LinkOutlined />}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    window.open(repoUrl, '_blank');
-                  }}
-                  style={{
-                    color: 'rgb(148, 163, 184)',
-                    padding: '0 4px',
-                    height: 'auto',
-                  }}
-                />
-              </Tooltip>
+          <Space direction="vertical" size={0}>
+            <Space>
+              <Text style={{ color: 'rgb(241, 245, 249)', fontSize: 13 }}>{repoName}</Text>
+              {repoUrl && (
+                <Tooltip title={`Open ${repoName} on GitHub`}>
+                  <Button
+                    type="text"
+                    size="small"
+                    icon={<LinkOutlined />}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      window.open(repoUrl, '_blank');
+                    }}
+                    style={{
+                      color: 'rgb(148, 163, 184)',
+                      padding: '0 4px',
+                      height: 'auto',
+                    }}
+                  />
+                </Tooltip>
+              )}
+            </Space>
+            {winInfo != null && (
+              <Text type="secondary" style={{ fontSize: 11 }}>
+                This repo: {winInfo.winRate}% team win rate
+              </Text>
             )}
           </Space>
         );
@@ -356,18 +451,6 @@ const MemoManagement = () => {
       },
     },
     {
-      title: 'Priority',
-      dataIndex: 'priority',
-      key: 'priority',
-      align: 'center',
-      sorter: (a, b) => (a.priority || 0) - (b.priority || 0),
-      render: (priority) => (
-        <Tag color={priority >= 50 ? 'red' : priority >= 20 ? 'orange' : 'default'}>
-          {priority || 0}
-        </Tag>
-      ),
-    },
-    {
       title: 'Notes',
       dataIndex: 'notes',
       key: 'notes',
@@ -467,6 +550,11 @@ const MemoManagement = () => {
             <Title level={2} style={{ color: 'rgb(241, 245, 249)', margin: 0 }}>
               Memo Management
             </Title>
+            {memoLimit != null && (
+              <Text type="secondary" style={{ fontSize: 13 }}>
+                Limit: {memoCommits.length} / {memoLimit}
+              </Text>
+            )}
           </Col>
           <Col>
             <Space>
@@ -593,6 +681,21 @@ const MemoManagement = () => {
             label="Priority"
             name="priority"
             rules={[{ type: 'number', min: 0, max: 100 }]}
+            extra={
+              currentEditItem?.suggestedPriority != null && (
+                <Space size="small" style={{ marginTop: 4 }}>
+                  <Text type="secondary">Suggested (auto): {currentEditItem.suggestedPriority}</Text>
+                  <Button
+                    type="link"
+                    size="small"
+                    icon={<ThunderboltOutlined />}
+                    onClick={() => editForm.setFieldValue('priority', currentEditItem.suggestedPriority)}
+                  >
+                    Use suggested
+                  </Button>
+                </Space>
+              )
+            }
           >
             <InputNumber
               size="large"

@@ -34,6 +34,7 @@ import {
   ExclamationCircleOutlined,
   ClockCircleOutlined,
   SettingOutlined,
+  GiftOutlined,
 } from '@ant-design/icons';
 import ReactECharts from 'echarts-for-react';
 import api from '../../config/api';
@@ -46,7 +47,6 @@ dayjs.extend(relativeTime);
 const { Title, Text } = Typography;
 const { Option } = Select;
 const { RangePicker } = DatePicker;
-const { Panel } = Collapse;
 
 const CommitsTable = () => {
   const { isAdmin } = useAuth();
@@ -76,7 +76,19 @@ const CommitsTable = () => {
   const [chainLoading, setChainLoading] = useState(false);
   const [chainTree, setChainTree] = useState(null);
   const [chainTotalNodes, setChainTotalNodes] = useState(0);
-  
+  const [chainModalVisible, setChainModalVisible] = useState(false);
+  const [similarModalVisible, setSimilarModalVisible] = useState(false);
+  const [similarCommits, setSimilarCommits] = useState([]);
+  const [similarLoading, setSimilarLoading] = useState(false);
+  const [similarSourceCommit, setSimilarSourceCommit] = useState(null);
+  const [giftModalVisible, setGiftModalVisible] = useState(false);
+  const [giftCommit, setGiftCommit] = useState(null);
+  const [giftReceiverUserId, setGiftReceiverUserId] = useState(undefined);
+  const [giftReceiverAccountId, setGiftReceiverAccountId] = useState(undefined);
+  const [receiverAccounts, setReceiverAccounts] = useState([]);
+  const [teamMembers, setTeamMembers] = useState([]);
+  const [giftLoading, setGiftLoading] = useState(false);
+
   // Column visibility state - load from localStorage or use defaults
   const [visibleColumns, setVisibleColumns] = useState(() => {
     const saved = localStorage.getItem('commitsTable_visibleColumns');
@@ -222,19 +234,31 @@ const CommitsTable = () => {
 
   const fetchCommitChain = async () => {
     const base = (chainBaseCommit || '').trim();
-    if (!base || base.length < 7) {
-      message.warning('Enter a base commit (min 7 characters)');
+    const hasBase = base.length >= 7;
+    if (!hasBase && !chainRepoId) {
+      message.warning('Select a repo or enter a base commit (min 7 characters)');
       return;
     }
     setChainLoading(true);
     try {
-      const params = { base_commit: base };
+      const params = {};
+      if (hasBase) params.base_commit = base;
       if (chainRepoId) params.repo_id = chainRepoId;
       const res = await api.get('/commits/commit-chain', { params });
-      setChainTree(res.data.tree || null);
-      setChainTotalNodes(res.data.totalNodes || 0);
-      if (!res.data.tree?.children?.length) {
-        message.info('No merge commits found for this base commit');
+      const single = res.data.tree;
+      const multiple = res.data.trees;
+      if (multiple && multiple.length > 0) {
+        setChainTree({ name: 'All chains', children: multiple });
+        setChainTotalNodes(res.data.chainDepth ?? res.data.totalNodes ?? 0);
+      } else if (single) {
+        setChainTree(single);
+        setChainTotalNodes(res.data.chainDepth ?? res.data.totalNodes ?? 0);
+      } else {
+        setChainTree(null);
+        setChainTotalNodes(0);
+      }
+      if (!single?.children?.length && (!multiple || multiple.length === 0)) {
+        message.info(chainRepoId && !hasBase ? 'No commit chains found for this repo' : 'No merge commits found for this base commit');
       }
     } catch (err) {
       message.error(err.response?.data?.error || 'Failed to load commit chain');
@@ -263,7 +287,7 @@ const CommitsTable = () => {
       }
       (node.children || []).forEach(walk);
     }
-    chainTree.children.forEach(walk);
+    walk(chainTree);
     return list;
   }, [chainTree]);
 
@@ -364,6 +388,83 @@ const CommitsTable = () => {
       'error': 'Error',
     };
     return textMap[status] || status;
+  };
+
+  const handleFindSimilar = async (commitId) => {
+    setSimilarLoading(true);
+    setSimilarSourceCommit(null);
+    setSimilarCommits([]);
+    setSimilarModalVisible(true);
+    try {
+      const res = await api.get(`/commits/${commitId}/similar`, { params: { limit: 20 } });
+      setSimilarSourceCommit(res.data.commit);
+      setSimilarCommits(res.data.similar || []);
+    } catch (err) {
+      message.error(err.response?.data?.error || 'Failed to load similar commits');
+      setSimilarModalVisible(false);
+    } finally {
+      setSimilarLoading(false);
+    }
+  };
+
+  const handleOpenGiftModal = async (record) => {
+    setGiftCommit(record);
+    setGiftReceiverUserId(undefined);
+    setGiftReceiverAccountId(undefined);
+    setReceiverAccounts([]);
+    setGiftModalVisible(true);
+    try {
+      const res = await api.get('/users/team-members');
+      setTeamMembers(res.data.teamMembers || []);
+    } catch (err) {
+      message.error(err.response?.data?.error || 'Failed to load team members');
+    }
+  };
+
+  const handleGiftReceiverChange = async (userId) => {
+    setGiftReceiverUserId(userId);
+    setGiftReceiverAccountId(undefined);
+    if (!userId) {
+      setReceiverAccounts([]);
+      return;
+    }
+    try {
+      const res = await api.get(`/users/${userId}/accounts`);
+      setReceiverAccounts(res.data.accounts || []);
+    } catch (err) {
+      message.error(err.response?.data?.error || 'Failed to load receiver accounts');
+      setReceiverAccounts([]);
+    }
+  };
+
+  const handleGiftSubmit = async () => {
+    if (!giftCommit || !giftReceiverUserId) {
+      message.error('Please select a team member to send the commit to');
+      return;
+    }
+    if (!giftReceiverAccountId) {
+      message.error('Please select the receiver\'s Habitat account');
+      return;
+    }
+    setGiftLoading(true);
+    try {
+      await api.post(`/commits/${giftCommit.id}/gift`, {
+        receiver_user_id: giftReceiverUserId,
+        receiver_account_id: giftReceiverAccountId
+      });
+      message.success('Commit sent successfully');
+      setGiftModalVisible(false);
+      setGiftCommit(null);
+      setGiftReceiverUserId(undefined);
+      setGiftReceiverAccountId(undefined);
+      setReceiverAccounts([]);
+      fetchCommits();
+      fetchMyStats();
+    } catch (err) {
+      message.error(err.response?.data?.error || 'Failed to send commit');
+    } finally {
+      setGiftLoading(false);
+    }
   };
 
   const handleMemo = async (commitId, isInMemo, memoedBy) => {
@@ -744,7 +845,7 @@ const CommitsTable = () => {
       {
         title: 'Actions',
         key: 'actions',
-        width: 200,
+        width: 230,
         fixed: 'right',
         render: (_, record) => {
           const isReserved = record.userReservation && record.userReservation.status === 'reserved';
@@ -786,31 +887,48 @@ const CommitsTable = () => {
                 />
               </Tooltip>
               {isReserved ? (
-                <Popconfirm
-                  title="Cancel reservation?"
-                  onConfirm={() => handleCancelReserve(record.id)}
-                  okText="Yes"
-                  cancelText="No"
-                >
-                  <Tooltip title="Cancel reservation">
+                <>
+                  <Tooltip title="Send commit to another team member">
                     <Button
                       type="text"
                       size="small"
-                      icon={<CloseCircleOutlined />}
-                      loading={actionLoading[`cancel-${record.id}`]}
-                      style={{
-                        color: '#52c41a',
-                        padding: '4px 8px',
-                      }}
+                      icon={<GiftOutlined />}
+                      onClick={() => handleOpenGiftModal(record)}
+                      style={{ color: '#722ed1', padding: '4px 8px' }}
                       onMouseEnter={(e) => {
-                        e.currentTarget.style.background = 'rgba(82, 196, 26, 0.1)';
+                        e.currentTarget.style.background = 'rgba(114, 46, 209, 0.1)';
                       }}
                       onMouseLeave={(e) => {
                         e.currentTarget.style.background = 'transparent';
                       }}
                     />
                   </Tooltip>
-                </Popconfirm>
+                  <Popconfirm
+                    title="Cancel reservation?"
+                    onConfirm={() => handleCancelReserve(record.id)}
+                    okText="Yes"
+                    cancelText="No"
+                  >
+                    <Tooltip title="Cancel reservation">
+                      <Button
+                        type="text"
+                        size="small"
+                        icon={<CloseCircleOutlined />}
+                        loading={actionLoading[`cancel-${record.id}`]}
+                        style={{
+                          color: '#52c41a',
+                          padding: '4px 8px',
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = 'rgba(82, 196, 26, 0.1)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = 'transparent';
+                        }}
+                      />
+                    </Tooltip>
+                  </Popconfirm>
+                </>
               ) : (
                 <Tooltip title="Reserve commit">
                   <Button
@@ -846,6 +964,21 @@ const CommitsTable = () => {
                   }}
                   onMouseEnter={(e) => {
                     e.currentTarget.style.background = isUnsuitable ? 'rgba(255, 77, 79, 0.1)' : 'rgba(140, 140, 140, 0.1)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'transparent';
+                  }}
+                />
+              </Tooltip>
+              <Tooltip title="Find similar commits (by scores)">
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<SearchOutlined />}
+                  onClick={() => handleFindSimilar(record.id)}
+                  style={{ padding: '4px 8px', color: '#8c8c8c' }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = 'rgba(24, 144, 255, 0.1)';
                   }}
                   onMouseLeave={(e) => {
                     e.currentTarget.style.background = 'transparent';
@@ -1185,204 +1318,15 @@ const CommitsTable = () => {
               </Space>
             </Row>
 
-            {/* Admin: Commit Chain tree (base -> merge commits, for paid_out chain) */}
+            {/* Admin: Commit Chain – open in modal */}
             {isAdmin() && (
-              <Collapse style={{ marginBottom: 16, background: '#1e293b', border: '1px solid #334155' }}>
-                <Panel
-                  header={
-                    <Space>
-                      <Text strong style={{ color: 'rgb(241, 245, 249)' }}>Commit Chain (Admin)</Text>
-                      <Text type="secondary" style={{ fontSize: 12 }}>Base commit → merge commits tree (paid_out chain)</Text>
-                    </Space>
-                  }
-                  key="commit-chain"
-                >
-                  <Row gutter={[16, 16]} align="middle">
-                    <Col>
-                      <Input
-                        placeholder="Base commit hash (min 7 chars)"
-                        value={chainBaseCommit}
-                        onChange={(e) => setChainBaseCommit(e.target.value)}
-                        style={{ width: 280 }}
-                        allowClear
-                      />
-                    </Col>
-                    <Col>
-                      <Select
-                        placeholder="Repo (optional)"
-                        allowClear
-                        value={chainRepoId}
-                        onChange={setChainRepoId}
-                        style={{ width: 220 }}
-                      >
-                        {repos.map((r) => (
-                          <Option key={r.id} value={r.id}>{r.fullName || r.repoName}</Option>
-                        ))}
-                      </Select>
-                    </Col>
-                    <Col>
-                      <Button type="primary" loading={chainLoading} onClick={fetchCommitChain}>
-                        Load chain
-                      </Button>
-                    </Col>
-                    {chainTotalNodes > 0 && (
-                      <Col>
-                        <Text style={{ color: 'rgb(148, 163, 184)' }}>Chain: {chainTotalNodes} node(s)</Text>
-                      </Col>
-                    )}
-                  </Row>
-                  {chainTree && (
-                    <Row gutter={16} style={{ marginTop: 16, minHeight: 400 }}>
-                      <Col xs={24} lg={14}>
-                        <div style={{ minHeight: 450 }}>
-                          <ReactECharts
-                            option={{
-                              title: {
-                                text: 'Commit chain',
-                                left: 'center',
-                                textStyle: { color: 'rgb(241, 245, 249)', fontSize: 14 }
-                              },
-                              tooltip: {
-                                trigger: 'item',
-                                formatter: (params) => {
-                                  const d = params.data;
-                                  if (!d) return params.name;
-                                  let s = `<strong>${params.name}</strong>`;
-                                  if (d.baseCommit) s += `<br/>Base: ${d.baseCommit.substring(0, 12)}...`;
-                                  if (d.mergedCommit) s += `<br/>Merged: ${d.mergedCommit.substring(0, 12)}...`;
-                                  if (d.status) s += `<br/>Status: ${d.status}`;
-                                  if (d.habitateScore != null) s += `<br/>Habitat: ${d.habitateScore}`;
-                                  if (d.suitabilityScore != null) s += `<br/>Suitability: ${d.suitabilityScore}`;
-                                  if (d.difficultyScore != null) s += `<br/>Difficulty: ${d.difficultyScore}`;
-                                  if (d.repoName) s += `<br/>Repo: ${d.repoName}`;
-                                  return s;
-                                }
-                              },
-                              series: [
-                                {
-                                  type: 'tree',
-                                  data: [chainTree],
-                                  left: '2%',
-                                  right: '2%',
-                                  top: '15%',
-                                  bottom: '8%',
-                                  orient: 'TB',
-                                  symbol: 'roundRect',
-                                  symbolSize: 10,
-                                  edgeShape: 'polyline',
-                                  edgeForkPosition: '50%',
-                                  initialTreeDepth: -1,
-                                  lineStyle: { color: '#334155', width: 1.5 },
-                                  itemStyle: {
-                                    color: '#16a34a',
-                                    borderColor: '#334155',
-                                    borderWidth: 1
-                                  },
-                                  label: {
-                                    position: 'left',
-                                    verticalAlign: 'middle',
-                                    align: 'right',
-                                    color: 'rgb(241, 245, 249)',
-                                    fontSize: 12
-                                  },
-                                  leaves: {
-                                    label: { position: 'left', verticalAlign: 'middle', align: 'right' }
-                                  },
-                                  expandAndCollapse: true,
-                                  animationDuration: 550,
-                                  animationDurationUpdate: 750
-                                }
-                              ],
-                              backgroundColor: 'transparent'
-                            }}
-                            style={{ height: Math.max(450, (chainTotalNodes || 1) * 55), width: '100%' }}
-                            opts={{ renderer: 'svg' }}
-                          />
-                        </div>
-                      </Col>
-                      <Col xs={24} lg={10}>
-                        {chainCommitsForChart.length > 0 ? (
-                          <div style={{ minHeight: 450 }}>
-                            <ReactECharts
-                              option={{
-                                title: {
-                                  text: 'Scores by commit',
-                                  left: 'center',
-                                  textStyle: { color: 'rgb(241, 245, 249)', fontSize: 14 }
-                                },
-                                tooltip: {
-                                  trigger: 'axis',
-                                  axisPointer: { type: 'shadow' },
-                                  backgroundColor: 'rgba(30, 41, 59, 0.95)',
-                                  borderColor: '#334155',
-                                  textStyle: { color: 'rgb(241, 245, 249)' }
-                                },
-                                legend: {
-                                  data: ['Habitat', 'Suitability', 'Difficulty'],
-                                  top: 28,
-                                  textStyle: { color: 'rgb(148, 163, 184)' }
-                                },
-                                grid: {
-                                  left: '3%',
-                                  right: '4%',
-                                  bottom: '3%',
-                                  top: 60,
-                                  containLabel: true
-                                },
-                                xAxis: {
-                                  type: 'value',
-                                  name: 'Score',
-                                  nameTextStyle: { color: 'rgb(148, 163, 184)' },
-                                  axisLabel: { color: 'rgb(148, 163, 184)' },
-                                  splitLine: { lineStyle: { color: '#334155' } }
-                                },
-                                yAxis: {
-                                  type: 'category',
-                                  data: chainCommitsForChart.map(c => c.label),
-                                  axisLabel: {
-                                    color: 'rgb(148, 163, 184)',
-                                    fontSize: 11,
-                                    width: 80,
-                                    overflow: 'truncate',
-                                    ellipsis: '...'
-                                  }
-                                },
-                                series: [
-                                  {
-                                    name: 'Habitat',
-                                    type: 'bar',
-                                    data: chainCommitsForChart.map(c => c.habitateScore != null ? Number(c.habitateScore) : null),
-                                    itemStyle: { color: '#16a34a' }
-                                  },
-                                  {
-                                    name: 'Suitability',
-                                    type: 'bar',
-                                    data: chainCommitsForChart.map(c => c.suitabilityScore != null ? Number(c.suitabilityScore) : null),
-                                    itemStyle: { color: '#3b82f6' }
-                                  },
-                                  {
-                                    name: 'Difficulty',
-                                    type: 'bar',
-                                    data: chainCommitsForChart.map(c => c.difficultyScore != null ? Number(c.difficultyScore) : null),
-                                    itemStyle: { color: '#f59e0b' }
-                                  }
-                                ],
-                                backgroundColor: 'transparent'
-                              }}
-                              style={{ height: 450, width: '100%' }}
-                              opts={{ renderer: 'svg' }}
-                            />
-                          </div>
-                        ) : (
-                          <div style={{ padding: 24, textAlign: 'center', color: 'rgb(148, 163, 184)', minHeight: 450 }}>
-                            <Text type="secondary">No score data for chain commits</Text>
-                          </div>
-                        )}
-                      </Col>
-                    </Row>
-                  )}
-                </Panel>
-              </Collapse>
+              <Button
+                type="default"
+                onClick={() => setChainModalVisible(true)}
+                style={{ marginBottom: 16 }}
+              >
+                Commit Chain (Admin)
+              </Button>
             )}
 
         <Table
@@ -1448,6 +1392,63 @@ const CommitsTable = () => {
         )}
       </Modal>
 
+      <Modal
+        title="Send commit to team member"
+        open={giftModalVisible}
+        onOk={handleGiftSubmit}
+        onCancel={() => {
+          setGiftModalVisible(false);
+          setGiftCommit(null);
+          setGiftReceiverUserId(undefined);
+          setGiftReceiverAccountId(undefined);
+          setReceiverAccounts([]);
+        }}
+        okText="Send"
+        cancelText="Cancel"
+        confirmLoading={giftLoading}
+        destroyOnClose
+      >
+        {giftCommit && (
+          <div>
+            <p><strong>Commit:</strong> <code>{giftCommit.baseCommit?.substring(0, 8)}</code> → <code>{giftCommit.mergedCommit?.substring(0, 8)}</code></p>
+            <p><strong>Repository:</strong> {giftCommit.repo?.fullName}</p>
+            <p style={{ marginBottom: 8, marginTop: 16 }}><strong>Send to:</strong></p>
+            <Select
+              size="large"
+              style={{ width: '100%' }}
+              placeholder="Select a team member"
+              value={giftReceiverUserId}
+              onChange={handleGiftReceiverChange}
+              allowClear
+            >
+              {teamMembers.map((u) => (
+                <Option key={u.id} value={u.id}>{u.username}</Option>
+              ))}
+            </Select>
+            {giftReceiverUserId && (
+              <>
+                <p style={{ marginBottom: 8, marginTop: 16 }}><strong>Receiver&apos;s Habitat account:</strong></p>
+                <Select
+                  size="large"
+                  style={{ width: '100%' }}
+                  placeholder="Select receiver's account"
+                  value={giftReceiverAccountId}
+                  onChange={setGiftReceiverAccountId}
+                  allowClear
+                >
+                  {receiverAccounts.map((acc) => (
+                    <Option key={acc.id} value={acc.id}>{acc.accountName}</Option>
+                  ))}
+                </Select>
+              </>
+            )}
+            <Text type="secondary" style={{ display: 'block', marginTop: 12 }}>
+              Your reservation will be released and the commit will be reserved on the selected account.
+            </Text>
+          </div>
+        )}
+      </Modal>
+
       {/* Column Customization Modal */}
       <Modal
         title="Customize Columns"
@@ -1484,6 +1485,261 @@ const CommitsTable = () => {
             </Space>
           </div>
         </Space>
+      </Modal>
+
+      {/* Commit Chain (Admin) Modal */}
+      <Modal
+        title="Commit Chain (Admin)"
+        open={chainModalVisible}
+        onCancel={() => setChainModalVisible(false)}
+        footer={[<Button key="close" onClick={() => setChainModalVisible(false)}>Close</Button>]}
+        width={1700}
+        destroyOnClose
+        styles={{ body: { background: '#1e293b', borderRadius: 8 } }}
+      >
+        <Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>
+          Select a repo and optionally a base commit. Each commit shows its status (e.g. paid_out, available).
+        </Text>
+        <Row gutter={[16, 16]} align="middle">
+          <Col>
+            <Input
+              placeholder="Base commit (optional if repo selected)"
+              value={chainBaseCommit}
+              onChange={(e) => setChainBaseCommit(e.target.value)}
+              style={{ width: 280 }}
+              allowClear
+            />
+          </Col>
+          <Col>
+            <Select
+              placeholder="Repo (required for all chains)"
+              allowClear
+              value={chainRepoId}
+              onChange={setChainRepoId}
+              style={{ width: 220 }}
+            >
+              {repos.map((r) => (
+                <Option key={r.id} value={r.id}>{r.fullName || r.repoName}</Option>
+              ))}
+            </Select>
+          </Col>
+          <Col>
+            <Button type="primary" loading={chainLoading} onClick={fetchCommitChain}>
+              Load chain
+            </Button>
+          </Col>
+          {chainTotalNodes > 0 && (
+            <Col>
+              <Text style={{ color: 'rgb(148, 163, 184)' }}>Chain: {chainTotalNodes} node(s)</Text>
+            </Col>
+          )}
+        </Row>
+        {chainTree && (
+          <Row gutter={16} style={{ marginTop: 16, minHeight: 400 }}>
+            <Col xs={24} lg={14}>
+              <div style={{ minHeight: 450}}>
+                <ReactECharts
+                  option={{
+                    title: {
+                      text: 'Commit chain',
+                      left: 'center',
+                      textStyle: { color: 'rgb(241, 245, 249)', fontSize: 14 }
+                    },
+                    tooltip: {
+                      trigger: 'item',
+                      formatter: (params) => {
+                        const d = params.data;
+                        if (!d) return params.name;
+                        let s = `<strong>${params.name}</strong>`;
+                        if (d.baseCommit) s += `<br/>Base: ${d.baseCommit.substring(0, 12)}...`;
+                        if (d.mergedCommit) s += `<br/>Merged: ${d.mergedCommit.substring(0, 12)}...`;
+                        if (d.status) s += `<br/>Status: ${d.status}`;
+                        if (d.habitateScore != null) s += `<br/>Habitat: ${d.habitateScore}`;
+                        if (d.suitabilityScore != null) s += `<br/>Suitability: ${d.suitabilityScore}`;
+                        if (d.difficultyScore != null) s += `<br/>Difficulty: ${d.difficultyScore}`;
+                        if (d.repoName) s += `<br/>Repo: ${d.repoName}`;
+                        return s;
+                      }
+                    },
+                    series: [
+                      {
+                        type: 'tree',
+                        data: [chainTree],
+                        left: '2%',
+                        right: '2%',
+                        top: '15%',
+                        bottom: '8%',
+                        orient: 'TB',
+                        symbol: 'roundRect',
+                        symbolSize: 10,
+                        edgeShape: 'polyline',
+                        edgeForkPosition: '50%',
+                        initialTreeDepth: -1,
+                        lineStyle: { color: '#334155', width: 1.5 },
+                        itemStyle: {
+                          color: '#16a34a',
+                          borderColor: '#334155',
+                          borderWidth: 1
+                        },
+                        label: {
+                          position: 'left',
+                          verticalAlign: 'middle',
+                          align: 'right',
+                          color: 'rgb(241, 245, 249)',
+                          fontSize: 12
+                        },
+                        leaves: {
+                          label: { position: 'left', verticalAlign: 'middle', align: 'right' }
+                        },
+                        expandAndCollapse: true,
+                        animationDuration: 550,
+                        animationDurationUpdate: 750
+                      }
+                    ],
+                    backgroundColor: 'transparent'
+                  }}
+                  style={{ height: Math.max(450, (chainTotalNodes || 1) * 55), width: '100%' }}
+                  opts={{ renderer: 'svg' }}
+                />
+              </div>
+            </Col>
+            <Col xs={24} lg={10}>
+              {chainCommitsForChart.length > 0 ? (
+                <div style={{ minHeight: 450}}>
+                  <ReactECharts
+                    option={{
+                      title: {
+                        text: 'Scores by commit',
+                        left: 'center',
+                        textStyle: { color: 'rgb(241, 245, 249)', fontSize: 14 }
+                      },
+                      tooltip: {
+                        trigger: 'axis',
+                        axisPointer: { type: 'shadow' },
+                        backgroundColor: 'rgba(30, 41, 59, 0.95)',
+                        borderColor: '#334155',
+                        textStyle: { color: 'rgb(241, 245, 249)' }
+                      },
+                      legend: {
+                        data: ['Habitat', 'Suitability', 'Difficulty'],
+                        top: 28,
+                        textStyle: { color: 'rgb(148, 163, 184)' }
+                      },
+                      grid: {
+                        left: '3%',
+                        right: '4%',
+                        bottom: '3%',
+                        top: 60,
+                        containLabel: true
+                      },
+                      xAxis: {
+                        type: 'value',
+                        name: 'Score',
+                        nameTextStyle: { color: 'rgb(148, 163, 184)' },
+                        axisLabel: { color: 'rgb(148, 163, 184)' },
+                        splitLine: { lineStyle: { color: '#334155' } }
+                      },
+                      yAxis: {
+                        type: 'category',
+                        data: chainCommitsForChart.map(c => c.label),
+                        axisLabel: {
+                          color: 'rgb(148, 163, 184)',
+                          fontSize: 11,
+                          width: 80,
+                          overflow: 'truncate',
+                          ellipsis: '...'
+                        }
+                      },
+                      series: [
+                        {
+                          name: 'Habitat',
+                          type: 'bar',
+                          data: chainCommitsForChart.map(c => c.habitateScore != null ? Number(c.habitateScore) : null),
+                          itemStyle: { color: '#16a34a' }
+                        },
+                        {
+                          name: 'Suitability',
+                          type: 'bar',
+                          data: chainCommitsForChart.map(c => c.suitabilityScore != null ? Number(c.suitabilityScore) : null),
+                          itemStyle: { color: '#3b82f6' }
+                        },
+                        {
+                          name: 'Difficulty',
+                          type: 'bar',
+                          data: chainCommitsForChart.map(c => c.difficultyScore != null ? Number(c.difficultyScore) : null),
+                          itemStyle: { color: '#f59e0b' }
+                        }
+                      ],
+                      backgroundColor: 'transparent'
+                    }}
+                    style={{ height: 450, width: '100%' }}
+                    opts={{ renderer: 'svg' }}
+                  />
+                </div>
+              ) : (
+                <div style={{ padding: 24, textAlign: 'center', color: 'rgb(148, 163, 184)', minHeight: 450 }}>
+                  <Text type="secondary">No score data for chain commits</Text>
+                </div>
+              )}
+            </Col>
+          </Row>
+        )}
+      </Modal>
+
+      <Modal
+        title="Find similar commits"
+        open={similarModalVisible}
+        onCancel={() => setSimilarModalVisible(false)}
+        footer={[
+          <Button key="close" onClick={() => setSimilarModalVisible(false)}>Close</Button>
+        ]}
+        width={1200}
+        destroyOnClose
+      >
+        {similarLoading ? (
+          <div style={{ padding: 24, textAlign: 'center' }}>Loading similar commits…</div>
+        ) : similarSourceCommit ? (
+          <>
+            <Text type="secondary" style={{ display: 'block', marginBottom: 12 }}>
+              Similar to commit id {similarSourceCommit.id} (scores: H {similarSourceCommit.habitateScore ?? '—'}, S {similarSourceCommit.suitabilityScore ?? '—'}, D {similarSourceCommit.difficultyScore ?? '—'})
+            </Text>
+            <Table
+              size="small"
+              dataSource={similarCommits}
+              rowKey="id"
+              pagination={false}
+              scroll={{ y: 360 }}
+              columns={[
+                { title: 'ID', dataIndex: 'id', width: 70, render: (id) => <Text code>{id}</Text> },
+                { title: 'Merged', dataIndex: 'mergedCommit', width: 100, render: (t) => t ? <Text code>{String(t).slice(0, 8)}</Text> : '—' },
+                { title: 'Repo', key: 'repo', width: 180, render: (_, r) => r.repo?.fullName || r.repo?.repoName || '—' },
+                { title: 'Status', dataIndex: 'status', width: 120, render: (s) => {
+                  if (!s) return  <Tag color='green'>available</Tag>;
+                  const statusConfig = {
+                    paid_out: { color: 'blue', label: 'paid_out' },
+                    too_easy: { color: 'orange', label: 'too_easy' },
+                    already_reserved: { color: 'purple', label: 'already reserved' },
+                    reserved: { color: 'gold', label: 'reserved' },
+                    available: { color: 'green', label: 'available' }
+                  };
+                  const config = statusConfig[s] || { color: 'default', label: s };
+                  return <Tag color={config.color}>{config.label}</Tag>;
+                } },
+                { title: 'H', dataIndex: 'habitateScore', width: 60 },
+                { title: 'S', dataIndex: 'suitabilityScore', width: 60 },
+                { title: 'D', dataIndex: 'difficultyScore', width: 60 },
+                {
+                  title: '',
+                  key: 'link',
+                  width: 80,
+                  render: (_, r) => (
+                    <Button type="link" size="small" onClick={() => { setSimilarModalVisible(false); setFilters(prev => ({ ...prev, merged_commit: r.mergedCommit ? String(r.mergedCommit).slice(0, 8) : '' })); }}>Show in table</Button>
+                  )
+                }
+              ]}
+            />
+          </>
+        ) : null}
       </Modal>
     </div>
   );
