@@ -61,7 +61,7 @@ const hideGlobalLoader = () => {
 api.interceptors.request.use(
   (config) => {
     if (config.showLoading !== false) {
-      showGlobalLoader();
+      //showGlobalLoader();
     }
     return config;
   },
