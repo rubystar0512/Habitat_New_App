@@ -54,6 +54,7 @@ const RepoManagement = () => {
   const [selectedRepo, setSelectedRepo] = useState(null);
   const [form] = Form.useForm();
   const [editForm] = Form.useForm();
+  const [syncing, setSyncing] = useState(false);
 
   const fetchRepos = async () => {
     setLoading(true);
@@ -185,6 +186,28 @@ const RepoManagement = () => {
       fetchRepos();
     } catch (error) {
       message.error(error.response?.data?.error || 'Failed to delete repository');
+    }
+  };
+
+  const handleSyncFromHabitat = async () => {
+    setSyncing(true);
+    try {
+      const response = await api.post('/repos/sync-from-habitat');
+      const { created, updated, total, errors } = response.data;
+      
+      let messageText = `Sync completed: ${created} created, ${updated} updated out of ${total} repos`;
+      if (errors && errors.length > 0) {
+        messageText += ` (${errors.length} errors)`;
+        message.warning(messageText);
+      } else {
+        message.success(messageText);
+      }
+      
+      await fetchRepos();
+    } catch (error) {
+      message.error(error.response?.data?.error || 'Failed to sync repositories from Habitat API');
+    } finally {
+      setSyncing(false);
     }
   };
 
@@ -385,13 +408,22 @@ const RepoManagement = () => {
             </Title>
           </Col>
           <Col>
-            <Button
-              type="primary"
-              icon={<PlusOutlined />}
-              onClick={() => setCreateModalVisible(true)}
-            >
-              Add Repository
-            </Button>
+            <Space>
+              <Button
+                icon={<SyncOutlined />}
+                onClick={handleSyncFromHabitat}
+                loading={syncing}
+              >
+                Sync from Habitat
+              </Button>
+              <Button
+                type="primary"
+                icon={<PlusOutlined />}
+                onClick={() => setCreateModalVisible(true)}
+              >
+                Add Repository
+              </Button>
+            </Space>
           </Col>
         </Row>
 

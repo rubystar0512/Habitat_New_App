@@ -1,7 +1,8 @@
 const express = require('express');
-const { GitRepo } = require('../models');
+const { GitRepo, UserHabitatAccount } = require('../models');
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
 const { idParamRule, paginationRules, handleValidationErrors } = require('../middleware/validation');
+const habitatApiService = require('../services/habitatApi');
 
 const router = express.Router();
 
@@ -132,6 +133,114 @@ router.delete('/:id', requireAdmin, idParamRule, handleValidationErrors, async (
 
     res.json({
       message: 'Repository deleted successfully'
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Sync repos from Habitat API (admin only)
+router.post('/sync-from-habitat', requireAdmin, async (req, res, next) => {
+  try {
+    // Get the first active account for the user to use for API calls
+    const account = await UserHabitatAccount.findOne({
+      where: { userId: req.userId, isActive: true },
+      order: [['createdAt', 'ASC']]
+    });
+
+    if (!account) {
+      return res.status(400).json({ error: 'No active Habitat account found. Please create an active account first.' });
+    }
+
+    const apiUrl = account.apiUrl || process.env.HABITAT_API_URL || 'https://code.habitat.inc';
+    
+    // Fetch repos statistics from Habitat API
+    const result = await habitatApiService.getReposStatistics(account.apiToken, apiUrl);
+
+    if (!result.success) {
+      return res.status(400).json({ error: result.error || 'Failed to fetch repos from Habitat API' });
+    }
+
+    const items = result.items || [];
+    let updatedCount = 0;
+    let createdCount = 0;
+    const errors = [];
+
+    for (const item of items) {
+      try {
+        const habitatRepoId = item.id;
+        const repoOrg = item.repo_org || '';
+        const repoName = item.repo_name || '';
+        const fullName = repoOrg && repoName ? `${repoOrg}/${repoName}` : repoName;
+        const commitCutoffDate = item.commit_cutoff_date;
+        const submissionStatus = item.submission_status;
+        
+        // Determine if active (submission_status === 'opened' means active)
+        const isActive = true;
+
+        if (!habitatRepoId || !repoName) {
+          errors.push({ habitatRepoId, error: 'Missing required fields (id or repo_name)' });
+          continue;
+        }
+
+        // Find existing repo by habitatRepoId
+        const existingRepo = await GitRepo.findOne({
+          where: { habitatRepoId }
+        });
+
+        if (existingRepo) {
+          // Update existing repo
+          const updates = {
+            isActive
+          };
+
+          // Only update cutoffDate if it's not null in the API response
+          if (commitCutoffDate) {
+            // Parse ISO date string (e.g., "2015-01-01T00:00:00Z")
+            const cutoffDate = new Date(commitCutoffDate);
+            if (!isNaN(cutoffDate.getTime())) {
+              updates.cutoffDate = cutoffDate.toISOString().split('T')[0]; // Format as YYYY-MM-DD
+            }
+          }
+          // If commitCutoffDate is null, we don't update cutoffDate (keep current DB data)
+
+          await existingRepo.update(updates);
+          updatedCount++;
+        } else {
+          // Create new repo
+          const newRepoData = {
+            repoName,
+            fullName,
+            habitatRepoId,
+            defaultBranch: 'main',
+            isActive
+          };
+
+          // Only set cutoffDate if it's not null
+          if (commitCutoffDate) {
+            const cutoffDate = new Date(commitCutoffDate);
+            if (!isNaN(cutoffDate.getTime())) {
+              newRepoData.cutoffDate = cutoffDate.toISOString().split('T')[0];
+            }
+          }
+
+          await GitRepo.create(newRepoData);
+          createdCount++;
+        }
+      } catch (itemError) {
+        errors.push({
+          habitatRepoId: item.id,
+          error: itemError.message
+        });
+      }
+    }
+
+    res.json({
+      message: `Sync completed: ${createdCount} created, ${updatedCount} updated`,
+      created: createdCount,
+      updated: updatedCount,
+      total: items.length,
+      errors: errors.length > 0 ? errors : undefined
     });
   } catch (error) {
     next(error);

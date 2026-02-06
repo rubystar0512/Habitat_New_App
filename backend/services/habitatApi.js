@@ -187,10 +187,39 @@ const checkAccountHealth = async (apiToken, apiUrl) => {
   };
 };
 
+const getReposStatistics = async (apiToken, apiUrl) => {
+  // Use the endpoint: /api/v1/code/repos/statistics?active_only=true
+  const url = `${apiUrl.replace(/\/$/, '')}/api/v1/code/repos/statistics?active_only=true`;
+  
+  const result = await makeRequest(url, {
+    method: 'GET',
+    headers: {
+      'Authorization': `Bearer ${apiToken}`,
+      'Accept': 'application/json',
+      'User-Agent': 'HabitateWeb/1.0'
+    }
+  });
+
+  if (!result.success) {
+    return result;
+  }
+
+  // Handle response format - should have items array
+  const items = result.data?.items || [];
+  const total = result.data?.total || items.length;
+
+  return {
+    success: true,
+    items,
+    total
+  };
+};
+
 module.exports = {
   claim,
   deleteReservation,
   getUnavailableCommits,
   getMyReservations,
-  checkAccountHealth
+  checkAccountHealth,
+  getReposStatistics
 };
