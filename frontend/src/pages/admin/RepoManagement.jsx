@@ -62,9 +62,9 @@ const RepoManagement = () => {
       const params = hasFilters
         ? { limit: 1000, offset: 0 }
         : {
-            limit: pagination.pageSize,
-            offset: (pagination.current - 1) * pagination.pageSize,
-          };
+          limit: pagination.pageSize,
+          offset: (pagination.current - 1) * pagination.pageSize,
+        };
 
       if (filters.isActive !== null) {
         params.is_active = filters.isActive;
@@ -200,13 +200,6 @@ const RepoManagement = () => {
 
   const columns = [
     {
-      title: 'ID',
-      dataIndex: 'id',
-      key: 'id',
-      width: 80,
-      sorter: (a, b) => a.id - b.id,
-    },
-    {
       title: 'Repository Name',
       dataIndex: 'repoName',
       key: 'repoName',
@@ -297,14 +290,6 @@ const RepoManagement = () => {
         return new Date(a.lastFetchedAt) - new Date(b.lastFetchedAt);
       },
       render: (date) => date ? dayjs(date).format('YYYY-MM-DD HH:mm') : '-',
-    },
-    {
-      title: 'Created',
-      dataIndex: 'createdAt',
-      key: 'createdAt',
-      width: 180,
-      sorter: (a, b) => new Date(a.createdAt) - new Date(b.createdAt),
-      render: (date) => dayjs(date).format('YYYY-MM-DD HH:mm'),
     },
     {
       title: 'Actions',
@@ -474,7 +459,7 @@ const RepoManagement = () => {
             pageSizeOptions: ['10', '20', '50', '100'],
           }}
           onChange={handleTableChange}
-          scroll={{ x: 'max-content' }}
+          scroll={{ x: 'max-content', y: '54vh' }}
           style={{
             background: '#1e293b',
           }}
