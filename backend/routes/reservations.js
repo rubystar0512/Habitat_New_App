@@ -2,7 +2,7 @@ const express = require('express');
 const { Op } = require('sequelize');
 const { Reservation, Commit, UserHabitatAccount, GitRepo } = require('../models');
 const { authenticateToken } = require('../middleware/auth');
-const { createReservationRules, bulkReservationRules, idParamRule, paginationRules, handleValidationErrors } = require('../middleware/validation');
+const { createReservationRules, bulkReservationRules, transferReservationRules, idParamRule, paginationRules, handleValidationErrors } = require('../middleware/validation');
 const habitatApiService = require('../services/habitatApi');
 const { computePriorityFromCommit } = require('../services/priorityCalculator');
 
@@ -393,6 +393,130 @@ router.delete('/:id', idParamRule, handleValidationErrors, async (req, res, next
     });
 
     res.json({ message: 'Reservation cancelled successfully' });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Transfer reservation to another account
+router.post('/:id/transfer', idParamRule, transferReservationRules, handleValidationErrors, async (req, res, next) => {
+  try {
+    const reservationId = parseInt(req.params.id, 10);
+    if (isNaN(reservationId)) {
+      return res.status(400).json({ error: 'Invalid reservation ID' });
+    }
+
+    const { target_account_id } = req.body;
+    if (!target_account_id) {
+      return res.status(400).json({ error: 'target_account_id is required' });
+    }
+
+    const targetAccountId = parseInt(target_account_id, 10);
+    if (isNaN(targetAccountId)) {
+      return res.status(400).json({ error: 'Invalid target_account_id' });
+    }
+
+    // Find the reservation
+    const reservation = await Reservation.findOne({
+      where: { id: reservationId, userId: req.userId },
+      include: [
+        {
+          model: Commit,
+          as: 'commit',
+          include: [{
+            model: require('../models').GitRepo,
+            as: 'repo',
+            attributes: ['id', 'habitatRepoId']
+          }]
+        },
+        {
+          model: UserHabitatAccount,
+          as: 'account',
+          attributes: ['id', 'accountName', 'apiToken', 'apiUrl']
+        }
+      ]
+    });
+
+    if (!reservation) {
+      return res.status(404).json({ error: 'Reservation not found' });
+    }
+
+    if (reservation.status !== 'reserved') {
+      return res.status(400).json({ error: 'Only reserved reservations can be transferred' });
+    }
+
+    if (reservation.accountId === targetAccountId) {
+      return res.status(400).json({ error: 'Target account must be different from current account' });
+    }
+
+    // Verify target account belongs to user and is active
+    const targetAccount = await UserHabitatAccount.findOne({
+      where: { id: targetAccountId, userId: req.userId, isActive: true }
+    });
+
+    if (!targetAccount) {
+      return res.status(404).json({ error: 'Target account not found or inactive' });
+    }
+
+    // Verify commit exists and has repo with habitatRepoId
+    if (!reservation.commit) {
+      return res.status(400).json({ error: 'Commit not found for this reservation' });
+    }
+
+    if (!reservation.commit.repo?.habitatRepoId) {
+      return res.status(400).json({ error: 'Repository does not have Habitat ID' });
+    }
+
+    // Cancel old reservation via Habitat API
+    if (reservation.habitatReservationId && reservation.account) {
+      try {
+        await habitatApiService.deleteReservation(
+          reservation.account.apiToken,
+          reservation.account.apiUrl || process.env.HABITAT_API_URL || 'https://code.habitat.inc',
+          reservation.habitatReservationId
+        );
+      } catch (deleteError) {
+        console.error('Error deleting old reservation from Habitat API:', deleteError);
+        // Continue anyway - we'll still create the new reservation
+      }
+    }
+
+    // Mark old reservation as released
+    await reservation.update({
+      status: 'released',
+      cancelledAt: new Date()
+    });
+
+    // Create new reservation with target account via Habitat API
+    const apiUrl = targetAccount.apiUrl || process.env.HABITAT_API_URL || 'https://code.habitat.inc';
+    const claimResult = await habitatApiService.claim(
+      targetAccount.apiToken,
+      apiUrl,
+      reservation.commit.repo.habitatRepoId,
+      reservation.commit.baseCommit
+    );
+
+    if (!claimResult.success) {
+      return res.status(400).json({ error: claimResult.error || 'Failed to create new reservation' });
+    }
+
+    // Create new reservation record
+    const priority = computePriorityFromCommit(reservation.commit);
+    const newReservation = await Reservation.create({
+      userId: req.userId,
+      accountId: targetAccountId,
+      commitId: reservation.commitId,
+      habitatReservationId: claimResult.reservationId,
+      status: 'reserved',
+      expiresAt: claimResult.expiresAt,
+      reservedAt: new Date(),
+      priority
+    });
+
+    res.json({
+      message: 'Reservation transferred successfully',
+      reservation: newReservation
+    });
   } catch (error) {
     next(error);
   }

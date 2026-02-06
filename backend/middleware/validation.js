@@ -88,6 +88,9 @@ const bulkReservationRules = [
   body('commit_ids').isArray({ min: 1 }).withMessage('commit_ids array is required'),
   body('commit_ids.*').isInt({ min: 1 }).withMessage('Each commit_id must be a positive integer')
 ];
+const transferReservationRules = [
+  body('target_account_id').isInt({ min: 1 }).withMessage('Valid target_account_id is required')
+];
 
 // Successful task validations
 const createSuccessfulTaskRules = [
@@ -113,5 +116,6 @@ module.exports = {
   commitFilterRules,
   createReservationRules,
   bulkReservationRules,
+  transferReservationRules,
   createSuccessfulTaskRules
 };

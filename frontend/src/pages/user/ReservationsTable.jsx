@@ -16,6 +16,7 @@ import {
   Col,
   Popconfirm,
   Checkbox,
+  Modal,
 } from 'antd';
 import {
   ReloadOutlined,
@@ -27,7 +28,8 @@ import {
   CloseCircleOutlined,
   SyncOutlined,
   ClockCircleOutlined,
-  ThunderboltOutlined
+  ThunderboltOutlined,
+  SwapRightOutlined
 } from '@ant-design/icons';
 import api from '../../config/api';
 import dayjs from 'dayjs';
@@ -67,9 +69,15 @@ const ReservationsTable = () => {
   const [priorityUpdating, setPriorityUpdating] = useState({});
   const [selectedRowKeys, setSelectedRowKeys] = useState([]);
   const [bulkReleaseLoading, setBulkReleaseLoading] = useState(false);
+  const [habitatAccounts, setHabitatAccounts] = useState([]);
+  const [transferModalVisible, setTransferModalVisible] = useState(false);
+  const [transferReservation, setTransferReservation] = useState(null);
+  const [transferAccountId, setTransferAccountId] = useState(null);
+  const [transferLoading, setTransferLoading] = useState(false);
 
   useEffect(() => {
     fetchReservations();
+    fetchAccounts();
   }, [pagination.current, pagination.pageSize, filters.status, sortConfig.field, sortConfig.order]);
 
   useEffect(() => {
@@ -83,6 +91,15 @@ const ReservationsTable = () => {
     };
     fetchWinRates();
   }, []);
+
+  const fetchAccounts = async () => {
+    try {
+      const response = await api.get('/accounts', { params: { limit: 1000 } });
+      setHabitatAccounts(response.data.accounts || []);
+    } catch (error) {
+      console.error('Failed to fetch accounts:', error);
+    }
+  };
 
   const fetchReservations = async () => {
     setLoading(true);
@@ -232,6 +249,39 @@ const ReservationsTable = () => {
       message.error(err.response?.data?.error || 'Bulk release failed');
     } finally {
       setBulkReleaseLoading(false);
+    }
+  };
+
+  const handleTransfer = (reservation) => {
+    setTransferReservation(reservation);
+    setTransferAccountId(null);
+    setTransferModalVisible(true);
+  };
+
+  const handleTransferConfirm = async () => {
+    if (!transferReservation || !transferAccountId) {
+      message.error('Please select a target account');
+      return;
+    }
+    if (transferAccountId === transferReservation.accountId) {
+      message.warning('Please select a different account');
+      return;
+    }
+    setTransferLoading(true);
+    try {
+      await api.post(`/reservations/${transferReservation.id}/transfer`, {
+        target_account_id: transferAccountId
+      });
+      message.success('Reservation transferred successfully');
+      setTransferModalVisible(false);
+      setTransferReservation(null);
+      setTransferAccountId(null);
+      await fetchReservations();
+      await fetchAccounts(); // Refresh accounts to update remaining reversals
+    } catch (err) {
+      message.error(err.response?.data?.error || 'Failed to transfer reservation');
+    } finally {
+      setTransferLoading(false);
     }
   };
 
@@ -638,14 +688,30 @@ const ReservationsTable = () => {
     {
       title: 'Actions',
       key: 'actions',
-      width: 100,
+      width: 150,
       fixed: 'right',
       render: (_, record) => {
         const isReleasing = releasing[record.id];
         const canRelease = record.status === 'reserved' || record.status === 'failed';
+        const canTransfer = record.status === 'reserved';
 
         return (
           <Space>
+            {canTransfer && (
+              <Tooltip title="Transfer to another account">
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<SwapRightOutlined />}
+                  onClick={() => handleTransfer(record)}
+                  style={{
+                    color: '#1890ff',
+                    fontSize: 12,
+                    padding: '0 4px'
+                  }}
+                />
+              </Tooltip>
+            )}
             {canRelease && (
               <Popconfirm
                 title="Release Reservation"
@@ -921,6 +987,47 @@ const ReservationsTable = () => {
           />
         )}
       </Card>
+
+      <Modal
+        title="Transfer Reservation to Another Account"
+        open={transferModalVisible}
+        onOk={handleTransferConfirm}
+        onCancel={() => {
+          setTransferModalVisible(false);
+          setTransferReservation(null);
+          setTransferAccountId(null);
+        }}
+        okText="Transfer"
+        cancelText="Cancel"
+        confirmLoading={transferLoading}
+      >
+        {transferReservation && (
+          <Space direction="vertical" style={{ width: '100%' }}>
+            <Text><strong>Current Account:</strong> {transferReservation.account_name || '-'}</Text>
+            <Text><strong>Repo:</strong> {transferReservation.repo_name || '-'}</Text>
+            <Text><strong>Base Commit:</strong> <code>{(transferReservation.base_commit || '').slice(0, 8)}</code></Text>
+            <Text><strong>Select Target Account:</strong></Text>
+            <Select
+              size="large"
+              placeholder="Select target account"
+              style={{ width: '100%' }}
+              value={transferAccountId}
+              onChange={setTransferAccountId}
+            >
+              {habitatAccounts
+                .filter(acc => acc.isActive && acc.accountHealth !== 'exhausted' && acc.accountHealth !== 'error' && acc.id !== transferReservation.accountId)
+                .map(account => (
+                  <Option key={account.id} value={account.id}>
+                    {account.accountName} ({account.remainingReversals ?? '?'} remaining)
+                  </Option>
+                ))}
+            </Select>
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              This will cancel the reservation on the current account and create a new reservation on the selected account.
+            </Text>
+          </Space>
+        )}
+      </Modal>
     </div>
   );
 };
