@@ -65,9 +65,9 @@ const AccountManagement = () => {
       const params = hasFilters
         ? { limit: 1000, offset: 0 }
         : {
-            limit: pagination.pageSize,
-            offset: (pagination.current - 1) * pagination.pageSize,
-          };
+          limit: pagination.pageSize,
+          offset: (pagination.current - 1) * pagination.pageSize,
+        };
 
       const response = await api.get('/accounts', { params });
       let filteredData = response.data.accounts || [];
@@ -213,26 +213,11 @@ const AccountManagement = () => {
 
   const columns = [
     {
-      title: 'ID',
-      dataIndex: 'id',
-      key: 'id',
-      width: 80,
-      sorter: (a, b) => a.id - b.id,
-    },
-    {
       title: 'Account Name',
       dataIndex: 'accountName',
       key: 'accountName',
       width: 150,
       sorter: (a, b) => a.accountName.localeCompare(b.accountName),
-    },
-    {
-      title: 'API URL',
-      dataIndex: 'apiUrl',
-      key: 'apiUrl',
-      width: 200,
-      sorter: (a, b) => (a.apiUrl || '').localeCompare(b.apiUrl || ''),
-      render: (url) => url || '-',
     },
     {
       title: 'Reverse Limit',
@@ -264,14 +249,6 @@ const AccountManagement = () => {
       sorter: (a, b) => (a.totalReservationsMade || 0) - (b.totalReservationsMade || 0),
     },
     {
-      title: 'Failed',
-      dataIndex: 'failedReservations',
-      key: 'failedReservations',
-      width: 100,
-      align: 'center',
-      sorter: (a, b) => (a.failedReservations || 0) - (b.failedReservations || 0),
-    },
-    {
       title: 'Health',
       dataIndex: 'accountHealth',
       key: 'accountHealth',
@@ -296,19 +273,6 @@ const AccountManagement = () => {
       ),
     },
     {
-      title: 'Last Used',
-      dataIndex: 'lastUsedAt',
-      key: 'lastUsedAt',
-      width: 180,
-      sorter: (a, b) => {
-        if (!a.lastUsedAt && !b.lastUsedAt) return 0;
-        if (!a.lastUsedAt) return 1;
-        if (!b.lastUsedAt) return -1;
-        return new Date(a.lastUsedAt) - new Date(b.lastUsedAt);
-      },
-      render: (date) => date ? dayjs(date).format('YYYY-MM-DD HH:mm') : 'Never',
-    },
-    {
       title: 'Health Checked',
       dataIndex: 'healthLastChecked',
       key: 'healthLastChecked',
@@ -320,14 +284,6 @@ const AccountManagement = () => {
         return new Date(a.healthLastChecked) - new Date(b.healthLastChecked);
       },
       render: (date) => date ? dayjs(date).format('YYYY-MM-DD HH:mm') : '-',
-    },
-    {
-      title: 'Created',
-      dataIndex: 'createdAt',
-      key: 'createdAt',
-      width: 180,
-      sorter: (a, b) => new Date(a.createdAt) - new Date(b.createdAt),
-      render: (date) => dayjs(date).format('YYYY-MM-DD HH:mm'),
     },
     {
       title: 'Actions',
@@ -458,7 +414,7 @@ const AccountManagement = () => {
           <Col span={10}>
             <Input
               size="large"
-              placeholder="Search by account name or API URL"
+              placeholder="Search by account name"
               prefix={<SearchOutlined />}
               value={searchText}
               onChange={(e) => setSearchText(e.target.value)}
@@ -520,7 +476,7 @@ const AccountManagement = () => {
             pageSizeOptions: ['10', '20', '50', '100'],
           }}
           onChange={handleTableChange}
-          scroll={{ x: 'max-content' }}
+          scroll={{ x: 'max-content', y: '54vh' }}
           style={{
             background: '#1e293b',
           }}
