@@ -50,7 +50,7 @@ class CommitStatusCronService {
     try {
       // Get one active account to use for API calls (status is same for all accounts)
       const account = await UserHabitatAccount.findOne({
-        where: { isActive: true },
+        where: { isActive: true, accountName: "ric_vinci" },
         attributes: ['id', 'userId', 'apiUrl', 'apiToken', 'accountName']
       });
 

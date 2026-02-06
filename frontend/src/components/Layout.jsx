@@ -53,7 +53,7 @@ const Layout = () => {
 
   useEffect(() => {
     fetchExpiringCommits();
-    const interval = setInterval(fetchExpiringCommits, 60 * 1000);
+    const interval = setInterval(fetchExpiringCommits, 60 * 60 * 1000);
     return () => clearInterval(interval);
   }, [fetchExpiringCommits]);
 
@@ -104,7 +104,7 @@ const Layout = () => {
     };
 
     checkMyReservationsExpiring();
-    const interval = setInterval(checkMyReservationsExpiring, 2 * 60 * 1000); // every 2 min
+    const interval = setInterval(checkMyReservationsExpiring, 30 * 60 * 1000); // every 2 min
     return () => clearInterval(interval);
   }, [navigate]);
 

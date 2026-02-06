@@ -104,20 +104,10 @@ router.get('/expiring-commits', async (req, res, next) => {
     });
 
     const list = withPriority.slice(0, 20);
-    const myExpiringReservations = myRows.map(r => ({
-      reservationId: r.id,
-      commitId: r.commit?.id,
-      repoName: r.commit?.repo?.fullName || r.commit?.repo?.repoName,
-      baseCommit: r.commit?.baseCommit,
-      expiresAt: r.expiresAt,
-      isMine: true
-    }));
 
     res.json({
       expiringCommits: list,
       total: list.length,
-      myExpiringReservations,
-      myExpiringTotal: myExpiringReservations.length
     });
   } catch (error) {
     next(error);
