@@ -141,6 +141,8 @@ const CommitsTable = () => {
     max_deletions: null,
     min_file_changes: null,
     max_file_changes: null,
+    min_test_file_percent: null,
+    max_test_file_percent: null,
     is_merge: null,
     author: '',
     merged_commit: '',
@@ -1261,6 +1263,13 @@ const CommitsTable = () => {
                 <Input.Group compact>
                   <InputNumber placeholder="Min" style={{ width: '50%' }} min={0} value={filters.min_file_changes} onChange={(v) => handleFilterChange('min_file_changes', v)} />
                   <InputNumber placeholder="Max" style={{ width: '50%' }} min={0} value={filters.max_file_changes} onChange={(v) => handleFilterChange('max_file_changes', v)} />
+                </Input.Group>
+              </div>
+              <div style={filterBlockStyle}>
+                <Text style={filterLabelStyle}>Test File %</Text>
+                <Input.Group compact>
+                  <InputNumber placeholder="Min" style={{ width: '50%' }} min={0} max={100} value={filters.min_test_file_percent} onChange={(v) => handleFilterChange('min_test_file_percent', v)} />
+                  <InputNumber placeholder="Max" style={{ width: '50%' }} min={0} max={100} value={filters.max_test_file_percent} onChange={(v) => handleFilterChange('max_test_file_percent', v)} />
                 </Input.Group>
               </div>
 

@@ -114,6 +114,32 @@ router.get('/', commitFilterRules, paginationRules, handleValidationErrors, asyn
       where.isBehaviorPreservingRefactor = req.query.is_behavior_preserving_refactor === 'true';
     }
 
+    // Filter by test file percent (calculated as test_additions / additions * 100)
+    const testFilePercentConditions = [];
+    if (req.query.min_test_file_percent !== undefined && req.query.min_test_file_percent !== '') {
+      const minPercent = parseFloat(req.query.min_test_file_percent);
+      if (!isNaN(minPercent)) {
+        testFilePercentConditions.push(
+          sequelize.literal(`(CASE WHEN additions > 0 THEN (test_additions / additions * 100) ELSE 0 END) >= ${minPercent}`)
+        );
+      }
+    }
+    if (req.query.max_test_file_percent !== undefined && req.query.max_test_file_percent !== '') {
+      const maxPercent = parseFloat(req.query.max_test_file_percent);
+      if (!isNaN(maxPercent)) {
+        testFilePercentConditions.push(
+          sequelize.literal(`(CASE WHEN additions > 0 THEN (test_additions / additions * 100) ELSE 0 END) <= ${maxPercent}`)
+        );
+      }
+    }
+    if (testFilePercentConditions.length > 0) {
+      if (where[Op.and]) {
+        where[Op.and] = Array.isArray(where[Op.and]) ? [...where[Op.and], ...testFilePercentConditions] : [where[Op.and], ...testFilePercentConditions];
+      } else {
+        where[Op.and] = testFilePercentConditions;
+      }
+    }
+
     // Filter by display status (server-side so we can paginate correctly)
     const allowedDisplayStatuses = ['reserved', 'available', 'paid_out', 'unavailable', 'too_easy', 'already_reserved', 'in_distribution', 'pending_admin_approval', 'failed', 'error'];
     const displayStatus = (req.query.display_status || req.query.status || '').trim().toLowerCase();
