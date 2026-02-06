@@ -61,13 +61,13 @@ const UserManagement = () => {
       const params = hasFilters
         ? { limit: 1000, offset: 0 } // Fetch all for filtering
         : {
-            limit: pagination.pageSize,
-            offset: (pagination.current - 1) * pagination.pageSize,
-          };
+          limit: pagination.pageSize,
+          offset: (pagination.current - 1) * pagination.pageSize,
+        };
 
       const response = await api.get('/users', { params });
       let filteredData = response.data.users || [];
-      
+
       // Apply frontend filters
       if (searchText) {
         const searchLower = searchText.toLowerCase();
@@ -82,7 +82,7 @@ const UserManagement = () => {
       if (filters.isApproved !== null) {
         filteredData = filteredData.filter(user => user.isApproved === filters.isApproved);
       }
-      
+
       // Apply pagination to filtered results
       if (hasFilters) {
         const start = (pagination.current - 1) * pagination.pageSize;
@@ -190,13 +190,6 @@ const UserManagement = () => {
   };
 
   const columns = [
-    {
-      title: 'ID',
-      dataIndex: 'id',
-      key: 'id',
-      width: 80,
-      sorter: (a, b) => a.id - b.id,
-    },
     {
       title: 'Username',
       dataIndex: 'username',
@@ -480,7 +473,7 @@ const UserManagement = () => {
             pageSizeOptions: ['10', '20', '50', '100'],
           }}
           onChange={handleTableChange}
-          scroll={{ x: 'max-content' }}
+          scroll={{ x: 'max-content', y: '54vh' }}
           style={{
             background: '#1e293b',
           }}
