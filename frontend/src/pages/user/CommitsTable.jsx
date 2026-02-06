@@ -647,13 +647,6 @@ const CommitsTable = () => {
   const columns = useMemo(() => {
     const baseColumns = [
       {
-        title: 'ID',
-        dataIndex: 'id',
-        key: 'id',
-        width: 80,
-        sorter: true,
-      },
-      {
         title: 'Repository',
         key: 'repo',
         width: 180,

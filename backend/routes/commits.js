@@ -1,5 +1,5 @@
 const express = require('express');
-const { Op, col } = require('sequelize');
+const { Op, col, Sequelize } = require('sequelize');
 const { Commit, GitRepo, CommitFile, CommitFileStatsCache, Reservation, MemoCommit, CommitStatusCache, UserHabitatAccount, User } = require('../models');
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
 const { commitFilterRules, paginationRules, handleValidationErrors, idParamRule } = require('../middleware/validation');
@@ -178,9 +178,27 @@ router.get('/', commitFilterRules, paginationRules, handleValidationErrors, asyn
       {
         model: GitRepo,
         as: 'repo',
-        attributes: ['id', 'repoName', 'fullName']
+        required: true,
+        attributes: ['id', 'repoName', 'fullName', 'cutoffDate']
       }
     ];
+
+    // Filter commits above each repo's cutoff date
+    const cutoffDateCondition = Sequelize.literal(`(
+      (SELECT cutoff_date FROM git_repos WHERE git_repos.id = \`Commit\`.\`repo_id\`) IS NULL
+      OR 
+      (
+        (SELECT cutoff_date FROM git_repos WHERE git_repos.id = \`Commit\`.\`repo_id\`) IS NOT NULL 
+        AND \`Commit\`.\`commit_date\` IS NOT NULL 
+        AND DATE(\`Commit\`.\`commit_date\`) > DATE((SELECT cutoff_date FROM git_repos WHERE git_repos.id = \`Commit\`.\`repo_id\`))
+      )
+    )`);
+    
+    if (where[Op.and]) {
+      where[Op.and] = Array.isArray(where[Op.and]) ? [...where[Op.and], cutoffDateCondition] : [where[Op.and], cutoffDateCondition];
+    } else {
+      where[Op.and] = [cutoffDateCondition];
+    }
 
     // Handle search parameter (searches across multiple fields)
     if (req.query.search) {
