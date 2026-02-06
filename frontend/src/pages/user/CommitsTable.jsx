@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   Table,
   Card,
@@ -158,6 +158,12 @@ const CommitsTable = () => {
     status: null, // Filter by status: available, reserved, already_reserved, unavailable, too_easy, paid_out, etc.
   });
 
+  // Use ref to always get latest filters value
+  const filtersRef = useRef(filters);
+  useEffect(() => {
+    filtersRef.current = filters;
+  }, [filters]);
+
   useEffect(() => {
     fetchRepos();
     fetchAccounts();
@@ -185,10 +191,6 @@ const CommitsTable = () => {
     }
   };
 
-  useEffect(() => {
-    fetchCommits();
-  }, [pagination.current, pagination.pageSize, sortField, sortOrder, filters]);
-
   const fetchRepos = async () => {
     try {
       const response = await api.get('/repos', { params: { limit: 1000 } });
@@ -198,9 +200,11 @@ const CommitsTable = () => {
     }
   };
 
-  const fetchCommits = async () => {
+  const fetchCommits = useCallback(async () => {
     setLoading(true);
     try {
+      // Always use the latest filters from ref
+      const currentFilters = filtersRef.current;
       const params = {
         limit: pagination.pageSize,
         offset: (pagination.current - 1) * pagination.pageSize,
@@ -209,8 +213,8 @@ const CommitsTable = () => {
       };
 
       // Add all filters (status is now filtered server-side via display_status)
-      Object.keys(filters).forEach(key => {
-        const value = filters[key];
+      Object.keys(currentFilters).forEach(key => {
+        const value = currentFilters[key];
         if (key === 'repo_ids') return; // handled below
         if (value !== null && value !== '' && value !== false) {
           if (key === 'date_range' && value && value.length === 2) {
@@ -223,8 +227,8 @@ const CommitsTable = () => {
           }
         }
       });
-      if (filters.repo_ids && filters.repo_ids.length > 0) {
-        params.repo_ids = filters.repo_ids;
+      if (currentFilters.repo_ids && currentFilters.repo_ids.length > 0) {
+        params.repo_ids = currentFilters.repo_ids;
       }
 
       const response = await api.get('/commits', { params });
@@ -236,7 +240,11 @@ const CommitsTable = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [pagination.pageSize, pagination.current, sortField, sortOrder, filters]);
+
+  useEffect(() => {
+    fetchCommits();
+  }, [fetchCommits]);
 
   const fetchCommitChain = async () => {
     const base = (chainBaseCommit || '').trim();
@@ -930,13 +938,13 @@ const CommitsTable = () => {
           const memoedBy = record.memoedBy; // Info about who else has memoed this commit
           const isUnsuitable = record.isUnsuitable;
           const canMemo = !memoedBy || isInMemo; // Can only memo if not memoed by another user or already in own memo
-          
-          const memoTooltip = isInMemo 
-            ? 'Remove from memo' 
-            : memoedBy 
+
+          const memoTooltip = isInMemo
+            ? 'Remove from memo'
+            : memoedBy
               ? `Already in ${memoedBy.username || 'another team member'}'s memo`
               : 'Add to memo';
-          
+
           return (
             <Space size="small">
               <Tooltip title={memoTooltip}>
@@ -1162,7 +1170,7 @@ const CommitsTable = () => {
           style={{
             position: 'sticky',
             top: 0,
-           
+
           }}
         >
           <Card
@@ -1413,7 +1421,7 @@ const CommitsTable = () => {
               </Button>
             )}
 
-            <Space wrap style={{ marginBottom: 16, marginLeft:12 }}>
+            <Space wrap style={{ marginBottom: 16, marginLeft: 12 }}>
               <Button
                 type="primary"
                 icon={<CheckCircleOutlined />}
@@ -1438,36 +1446,36 @@ const CommitsTable = () => {
               </Button>
             </Space>
 
-        <Table
-          rowSelection={{
-            selectedRowKeys: selectedCommitRowKeys,
-            onChange: (keys) => setSelectedCommitRowKeys(keys),
-            getCheckboxProps: (record) => ({
-              disabled: record.displayStatus === 'already_reserved' || record.displayStatus === 'unavailable' || (record.userReservation && record.userReservation.status === 'reserved'),
-            }),
-          }}
-          columns={columns}
-          dataSource={commits}
-          rowKey="id"
-          loading={loading}
-          pagination={{
-            ...pagination,
-            total: total,
-            showSizeChanger: true,
-            showTotal: (total) => `Total ${total} commits`,
-            pageSizeOptions: ['10', '20', '50', '100', '200'],
-          }}
-          onChange={handleTableChange}
-          scroll={{ 
-            x: 'max-content',
-            y: 'calc(51vh)'
-          }}
-          sticky={{
-            offsetHeader: 0
-          }}
-          style={{
-            background: '#1e293b',
-          }}
+            <Table
+              rowSelection={{
+                selectedRowKeys: selectedCommitRowKeys,
+                onChange: (keys) => setSelectedCommitRowKeys(keys),
+                getCheckboxProps: (record) => ({
+                  disabled: record.displayStatus === 'already_reserved' || record.displayStatus === 'unavailable' || (record.userReservation && record.userReservation.status === 'reserved'),
+                }),
+              }}
+              columns={columns}
+              dataSource={commits}
+              rowKey="id"
+              loading={loading}
+              pagination={{
+                ...pagination,
+                total: total,
+                showSizeChanger: true,
+                showTotal: (total) => `Total ${total} commits`,
+                pageSizeOptions: ['10', '20', '50', '100', '200'],
+              }}
+              onChange={handleTableChange}
+              scroll={{
+                x: 'max-content',
+                y: 'calc(51vh)'
+              }}
+              sticky={{
+                offsetHeader: 0
+              }}
+              style={{
+                background: '#1e293b',
+              }}
             />
           </Card>
         </Col>
@@ -1683,7 +1691,7 @@ const CommitsTable = () => {
         {chainTree && (
           <Row gutter={16} style={{ marginTop: 16, minHeight: 400 }}>
             <Col xs={24} lg={14}>
-              <div style={{ minHeight: 450}}>
+              <div style={{ minHeight: 450 }}>
                 <ReactECharts
                   option={{
                     title: {
@@ -1751,7 +1759,7 @@ const CommitsTable = () => {
             </Col>
             <Col xs={24} lg={10}>
               {chainCommitsForChart.length > 0 ? (
-                <div style={{ minHeight: 450}}>
+                <div style={{ minHeight: 450 }}>
                   <ReactECharts
                     option={{
                       title: {
@@ -1859,18 +1867,20 @@ const CommitsTable = () => {
                 { title: 'ID', dataIndex: 'id', width: 70, render: (id) => <Text code>{id}</Text> },
                 { title: 'Merged', dataIndex: 'mergedCommit', width: 100, render: (t) => t ? <Text code>{String(t).slice(0, 8)}</Text> : '—' },
                 { title: 'Repo', key: 'repo', width: 180, render: (_, r) => r.repo?.fullName || r.repo?.repoName || '—' },
-                { title: 'Status', dataIndex: 'status', width: 120, render: (s) => {
-                  if (!s) return  <Tag color='green'>available</Tag>;
-                  const statusConfig = {
-                    paid_out: { color: 'blue', label: 'paid_out' },
-                    too_easy: { color: 'orange', label: 'too_easy' },
-                    already_reserved: { color: 'purple', label: 'already reserved' },
-                    reserved: { color: 'gold', label: 'reserved' },
-                    available: { color: 'green', label: 'available' }
-                  };
-                  const config = statusConfig[s] || { color: 'default', label: s };
-                  return <Tag color={config.color}>{config.label}</Tag>;
-                } },
+                {
+                  title: 'Status', dataIndex: 'status', width: 120, render: (s) => {
+                    if (!s) return <Tag color='green'>available</Tag>;
+                    const statusConfig = {
+                      paid_out: { color: 'blue', label: 'paid_out' },
+                      too_easy: { color: 'orange', label: 'too_easy' },
+                      already_reserved: { color: 'purple', label: 'already reserved' },
+                      reserved: { color: 'gold', label: 'reserved' },
+                      available: { color: 'green', label: 'available' }
+                    };
+                    const config = statusConfig[s] || { color: 'default', label: s };
+                    return <Tag color={config.color}>{config.label}</Tag>;
+                  }
+                },
                 { title: 'H', dataIndex: 'habitateScore', width: 60 },
                 { title: 'S', dataIndex: 'suitabilityScore', width: 60 },
                 { title: 'D', dataIndex: 'difficultyScore', width: 60 },
