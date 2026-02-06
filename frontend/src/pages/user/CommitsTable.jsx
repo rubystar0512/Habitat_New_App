@@ -385,6 +385,7 @@ const CommitsTable = () => {
       'pending_admin_approval': 'blue',
       'failed': 'error',
       'error': 'error',
+      'memo': 'gold',
     };
     return statusMap[status] || 'default';
   };
@@ -400,6 +401,7 @@ const CommitsTable = () => {
       'pending_admin_approval': 'Pending Approval',
       'failed': 'Failed',
       'error': 'Error',
+      'memo': 'In Memo',
     };
     return textMap[status] || status;
   };
@@ -1181,7 +1183,7 @@ const CommitsTable = () => {
               overflowY: 'auto',
             }}
           >
-            <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+            <div style={{ marginBottom: 12, display: 'flex', position: 'sticky', top: 20, borderRadius: 8, background: '#0f172a', zIndex: 1000, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, padding: 8, border: '1px solid #334155' }}>
               <Text strong style={{ color: 'rgb(241, 245, 249)', fontSize: 14 }}>
                 Filters {activeFiltersCount > 0 && <Tag color="blue">{activeFiltersCount}</Tag>}
               </Text>
@@ -1332,6 +1334,7 @@ const CommitsTable = () => {
                 <Select placeholder="All Status" style={{ width: '100%' }} allowClear value={filters.status} onChange={(v) => handleFilterChange('status', v)}>
                   <Option value="available">Available</Option>
                   <Option value="reserved">Reserved</Option>
+                  <Option value="memo">In Memo</Option>
                   <Option value="already_reserved">Already Reserved</Option>
                   <Option value="unavailable">Unavailable</Option>
                   <Option value="too_easy">Too Easy</Option>

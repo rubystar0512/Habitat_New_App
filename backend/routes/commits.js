@@ -141,13 +141,18 @@ router.get('/', commitFilterRules, paginationRules, handleValidationErrors, asyn
     }
 
     // Filter by display status (server-side so we can paginate correctly)
-    const allowedDisplayStatuses = ['reserved', 'available', 'paid_out', 'unavailable', 'too_easy', 'already_reserved', 'in_distribution', 'pending_admin_approval', 'failed', 'error'];
+    const allowedDisplayStatuses = ['reserved', 'available', 'paid_out', 'unavailable', 'too_easy', 'already_reserved', 'in_distribution', 'pending_admin_approval', 'failed', 'error', 'memo'];
     const displayStatus = (req.query.display_status || req.query.status || '').trim().toLowerCase();
     if (displayStatus && allowedDisplayStatuses.includes(displayStatus)) {
       const userId = parseInt(req.userId, 10);
       if (displayStatus === 'reserved') {
         where.id = {
           [Op.in]: sequelize.literal(`(SELECT commit_id FROM reservations WHERE user_id = ${userId} AND status = 'reserved')`)
+        };
+      } else if (displayStatus === 'memo') {
+        // Filter for commits in user's memo
+        where.id = {
+          [Op.in]: sequelize.literal(`(SELECT commit_id FROM memo_commits WHERE user_id = ${userId})`)
         };
       } else if (displayStatus === 'available') {
         const existingWhere = { ...where };
