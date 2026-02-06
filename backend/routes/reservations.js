@@ -143,7 +143,16 @@ router.get('/', paginationRules, handleValidationErrors, async (req, res, next) 
 // Bulk create reservations (commit_ids + account_id)
 router.post('/bulk', bulkReservationRules, handleValidationErrors, async (req, res, next) => {
   try {
-    const { account_id: accountId, commit_ids: commitIds } = req.body;
+    const { account_id, commit_ids: commitIds } = req.body;
+
+    if (!account_id) {
+      return res.status(400).json({ error: 'account_id is required' });
+    }
+
+    const accountId = parseInt(account_id, 10);
+    if (isNaN(accountId)) {
+      return res.status(400).json({ error: 'Invalid account_id' });
+    }
 
     const account = await UserHabitatAccount.findOne({
       where: { id: accountId, userId: req.userId, isActive: true }
@@ -155,23 +164,29 @@ router.post('/bulk', bulkReservationRules, handleValidationErrors, async (req, r
     const apiUrl = account.apiUrl || process.env.HABITAT_API_URL || 'https://code.habitat.inc';
     const results = { reserved: [], failed: [] };
 
-    for (const commitId of commitIds) {
+    for (const commitIdRaw of commitIds) {
+      const commitId = parseInt(commitIdRaw, 10);
+      if (isNaN(commitId)) {
+        results.failed.push({ commitId: commitIdRaw, error: 'Invalid commit ID' });
+        continue;
+      }
+
       const commit = await Commit.findByPk(commitId, {
         include: [{ model: GitRepo, as: 'repo', attributes: ['habitatRepoId'] }]
       });
       if (!commit) {
-        results.failed.push({ commitId, error: 'Commit not found' });
+        results.failed.push({ commitId: commitIdRaw, error: 'Commit not found' });
         continue;
       }
       if (!commit.repo?.habitatRepoId) {
-        results.failed.push({ commitId, error: 'Repository does not have Habitat ID' });
+        results.failed.push({ commitId: commitIdRaw, error: 'Repository does not have Habitat ID' });
         continue;
       }
       const existing = await Reservation.findOne({
-        where: { commitId, status: 'reserved' }
+        where: { commitId: commitId, status: 'reserved' }
       });
       if (existing) {
-        results.failed.push({ commitId, error: 'Commit already reserved' });
+        results.failed.push({ commitId: commitIdRaw, error: 'Commit already reserved' });
         continue;
       }
 
@@ -187,16 +202,16 @@ router.post('/bulk', bulkReservationRules, handleValidationErrors, async (req, r
         await Reservation.create({
           userId: req.userId,
           accountId: account.id,
-          commitId,
+          commitId: commitId,
           habitatReservationId: claimResult.reservationId,
           status: 'reserved',
           expiresAt: claimResult.expiresAt,
           reservedAt: new Date(),
           priority
         });
-        results.reserved.push({ commitId });
+        results.reserved.push({ commitId: commitIdRaw });
       } else {
-        results.failed.push({ commitId, error: claimResult.error || 'Claim failed' });
+        results.failed.push({ commitId: commitIdRaw, error: claimResult.error || 'Claim failed' });
       }
     }
 
@@ -214,12 +229,22 @@ router.post('/bulk', bulkReservationRules, handleValidationErrors, async (req, r
 // Create reservation (single)
 router.post('/', createReservationRules, handleValidationErrors, async (req, res, next) => {
   try {
-    const { commitId, accountId } = req.body;
+    const { commitId, account_id, accountId: accountIdRaw } = req.body;
     const singleCommitId = req.body.commit_id || commitId;
     if (!singleCommitId) {
       return res.status(400).json({ error: 'commit_id or commitId is required' });
     }
     const cid = parseInt(singleCommitId, 10);
+
+    const accountIdValue = account_id || accountIdRaw;
+    if (!accountIdValue) {
+      return res.status(400).json({ error: 'account_id is required' });
+    }
+
+    const accountId = parseInt(accountIdValue, 10);
+    if (isNaN(accountId)) {
+      return res.status(400).json({ error: 'Invalid account_id' });
+    }
 
     // Verify account belongs to user
     const account = await UserHabitatAccount.findOne({
@@ -230,15 +255,15 @@ router.post('/', createReservationRules, handleValidationErrors, async (req, res
       return res.status(404).json({ error: 'Account not found or inactive' });
     }
 
-    // Verify commit exists
-    const commit = await Commit.findByPk(commitId);
+    // Verify commit exists (use parsed cid)
+    const commit = await Commit.findByPk(cid);
     if (!commit) {
       return res.status(404).json({ error: 'Commit not found' });
     }
 
     // Check if already reserved
     const existingReservation = await Reservation.findOne({
-      where: { commitId, status: 'reserved' }
+      where: { commitId: cid, status: 'reserved' }
     });
 
     if (existingReservation) {

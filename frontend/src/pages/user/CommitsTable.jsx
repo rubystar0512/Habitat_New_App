@@ -534,6 +534,7 @@ const CommitsTable = () => {
       setReserveModalVisible(false);
       fetchCommits();
       fetchMyStats();
+      fetchAccounts(); // Refetch accounts to update remaining reversals
     } catch (error) {
       message.error(error.response?.data?.error || 'Failed to reserve commit');
     } finally {
@@ -567,6 +568,7 @@ const CommitsTable = () => {
       setSelectedCommitRowKeys([]);
       fetchCommits();
       fetchMyStats();
+      fetchAccounts(); // Refetch accounts to update remaining reversals
       if (res.data.failed > 0 && res.data.results?.failed?.length) {
         const firstFew = res.data.results.failed.slice(0, 3).map(f => f.error).join('; ');
         message.warning(`${res.data.failed} failed: ${firstFew}${res.data.results.failed.length > 3 ? '...' : ''}`);
@@ -619,6 +621,7 @@ const CommitsTable = () => {
       message.success('Reservation cancelled');
       fetchCommits();
       fetchMyStats();
+      fetchAccounts(); // Refetch accounts to update remaining reversals
     } catch (error) {
       message.error(error.response?.data?.error || 'Failed to cancel reservation');
     } finally {

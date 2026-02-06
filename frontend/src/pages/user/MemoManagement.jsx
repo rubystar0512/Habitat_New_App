@@ -30,6 +30,7 @@ import {
   CheckCircleOutlined,
   ClockCircleOutlined,
   DownloadOutlined,
+  CloseCircleOutlined,
 } from '@ant-design/icons';
 import api from '../../config/api';
 import dayjs from 'dayjs';
@@ -72,6 +73,7 @@ const MemoManagement = () => {
   const [singleReserveAccountId, setSingleReserveAccountId] = useState(null);
   const [singleReserveLoading, setSingleReserveLoading] = useState(false);
   const [bulkDeleteLoading, setBulkDeleteLoading] = useState(false);
+  const [cancelReserveLoading, setCancelReserveLoading] = useState({});
 
   useEffect(() => {
     fetchMemoCommits();
@@ -189,6 +191,7 @@ const MemoManagement = () => {
       setBulkReserveModalVisible(false);
       setSelectedRowKeys([]);
       fetchMemoCommits();
+      fetchAccounts(); // Refetch accounts to update remaining reversals
       if (failed > 0 && results?.failed?.length) {
         const firstFew = results.failed.slice(0, 3).map(f => f.error).join('; ');
         message.warning(`${failed} failed: ${firstFew}${results.failed.length > 3 ? '...' : ''}`);
@@ -241,10 +244,30 @@ const MemoManagement = () => {
       setSingleReserveModalVisible(false);
       setSingleReserveRecord(null);
       fetchMemoCommits();
+      fetchAccounts(); // Refetch accounts to update remaining reversals
     } catch (err) {
       message.error(err.response?.data?.error || 'Reserve failed');
     } finally {
       setSingleReserveLoading(false);
+    }
+  };
+
+  const handleCancelReserve = async (record) => {
+    const commitId = record.commitId ?? record.commit_id;
+    if (!commitId) {
+      message.error('Invalid commit');
+      return;
+    }
+    setCancelReserveLoading(prev => ({ ...prev, [commitId]: true }));
+    try {
+      await api.delete(`/commits/${commitId}/reserve`);
+      message.success('Reservation cancelled');
+      fetchMemoCommits();
+      fetchAccounts(); // Refetch accounts to update remaining reversals
+    } catch (err) {
+      message.error(err.response?.data?.error || 'Failed to cancel reservation');
+    } finally {
+      setCancelReserveLoading(prev => ({ ...prev, [commitId]: false }));
     }
   };
 
@@ -682,67 +705,96 @@ const MemoManagement = () => {
       key: 'actions',
       width: 120,
       fixed: 'right',
-      render: (_, record) => (
-        <Space size="small">
-          <Tooltip title="Reserve this commit">
-            <Button
-              type="text"
-              size="small"
-              icon={<CheckCircleOutlined />}
-              onClick={() => handleSingleReserve(record)}
-              style={{ color: '#52c41a', padding: '4px 8px' }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(82, 196, 26, 0.1)'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
-            />
-          </Tooltip>
-          <Tooltip title="Edit Memo">
-            <Button
-              type="text"
-              size="small"
-              icon={<EditOutlined />}
-              onClick={() => handleEdit(record)}
-              style={{
-                color: '#1890ff',
-                padding: '4px 8px',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = 'rgba(24, 144, 255, 0.1)';
-                e.currentTarget.style.color = '#40a9ff';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = 'transparent';
-                e.currentTarget.style.color = '#1890ff';
-              }}
-            />
-          </Tooltip>
-          <Popconfirm
-            title="Remove from Memo"
-            description="Are you sure you want to remove this commit from memo?"
-            onConfirm={() => handleDelete(record)}
-            okText="Yes"
-            cancelText="No"
-            okButtonProps={{ danger: true }}
-          >
-            <Tooltip title="Remove from Memo">
+      render: (_, record) => {
+        const isReserved = record.displayStatus === 'reserved';
+        const commitId = record.commitId ?? record.commit_id;
+        const isLoading = cancelReserveLoading[commitId];
+
+        return (
+          <Space size="small">
+            {isReserved ? (
+              <Popconfirm
+                title="Cancel reservation?"
+                description="Are you sure you want to cancel this reservation?"
+                onConfirm={() => handleCancelReserve(record)}
+                okText="Yes"
+                cancelText="No"
+                okButtonProps={{ danger: true }}
+              >
+                <Tooltip title="Cancel reservation">
+                  <Button
+                    type="text"
+                    size="small"
+                    icon={<CloseCircleOutlined />}
+                    loading={isLoading}
+                    style={{ color: '#ff4d4f', padding: '4px 8px' }}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255, 77, 79, 0.1)'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                  />
+                </Tooltip>
+              </Popconfirm>
+            ) : (
+              <Tooltip title="Reserve this commit">
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<CheckCircleOutlined />}
+                  onClick={() => handleSingleReserve(record)}
+                  style={{ color: '#52c41a', padding: '4px 8px' }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(82, 196, 26, 0.1)'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                />
+              </Tooltip>
+            )}
+            <Tooltip title="Edit Memo">
               <Button
                 type="text"
                 size="small"
-                icon={<DeleteOutlined />}
-                danger
+                icon={<EditOutlined />}
+                onClick={() => handleEdit(record)}
                 style={{
+                  color: '#1890ff',
                   padding: '4px 8px',
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'rgba(255, 77, 79, 0.1)';
+                  e.currentTarget.style.background = 'rgba(24, 144, 255, 0.1)';
+                  e.currentTarget.style.color = '#40a9ff';
                 }}
                 onMouseLeave={(e) => {
                   e.currentTarget.style.background = 'transparent';
+                  e.currentTarget.style.color = '#1890ff';
                 }}
               />
             </Tooltip>
-          </Popconfirm>
-        </Space>
-      ),
+            <Popconfirm
+              title="Remove from Memo"
+              description="Are you sure you want to remove this commit from memo?"
+              onConfirm={() => handleDelete(record)}
+              okText="Yes"
+              cancelText="No"
+              okButtonProps={{ danger: true }}
+            >
+              <Tooltip title="Remove from Memo">
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<DeleteOutlined />}
+                  danger
+                  style={{
+                    padding: '4px 8px',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = 'rgba(255, 77, 79, 0.1)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'transparent';
+                  }}
+                />
+              </Tooltip>
+            </Popconfirm>
+          </Space>
+        );
+      },
     },
   ];
 
@@ -911,12 +963,20 @@ const MemoManagement = () => {
         <Space direction="vertical" style={{ width: '100%' }}>
           <Text>Account to use for reservation:</Text>
           <Select
+            size="large"
             placeholder="Select account"
             style={{ width: '100%' }}
             value={bulkReserveAccountId}
             onChange={setBulkReserveAccountId}
-            options={accounts.filter(a => a.isActive).map(a => ({ value: a.id, label: a.accountName }))}
-          />
+          >
+            {accounts
+              .filter(acc => acc.isActive && acc.accountHealth !== 'exhausted' && acc.accountHealth !== 'error')
+              .map(account => (
+                <Option key={account.id} value={account.id}>
+                  {account.accountName} ({account.remainingReversals ?? '?'} remaining)
+                </Option>
+              ))}
+          </Select>
           <Text type="secondary">{selectedRowKeys.length} commit(s) selected.</Text>
         </Space>
       </Modal>
@@ -933,14 +993,22 @@ const MemoManagement = () => {
           <Space direction="vertical" style={{ width: '100%' }}>
             <Text><strong>Repo:</strong> {singleReserveRecord.repo_name || '—'}</Text>
             <Text><strong>Base commit:</strong> <code>{(singleReserveRecord.base_commit || '').slice(0, 8)}</code></Text>
-            <Text>Account to use:</Text>
+            <Text><strong>Select Account:</strong></Text>
             <Select
+              size="large"
               placeholder="Select account"
               style={{ width: '100%' }}
               value={singleReserveAccountId}
               onChange={setSingleReserveAccountId}
-              options={accounts.filter(a => a.isActive).map(a => ({ value: a.id, label: a.accountName }))}
-            />
+            >
+              {accounts
+                .filter(acc => acc.isActive && acc.accountHealth !== 'exhausted' && acc.accountHealth !== 'error')
+                .map(account => (
+                  <Option key={account.id} value={account.id}>
+                    {account.accountName} ({account.remainingReversals || 0} remaining)
+                  </Option>
+                ))}
+            </Select>
           </Space>
         )}
       </Modal>

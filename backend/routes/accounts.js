@@ -1,5 +1,5 @@
 const express = require('express');
-const { Op } = require('sequelize');
+const { Op, Sequelize } = require('sequelize');
 const { UserHabitatAccount, AccountRepoMapping, GitRepo, Reservation } = require('../models');
 const { authenticateToken } = require('../middleware/auth');
 const { idParamRule, paginationRules, handleValidationErrors } = require('../middleware/validation');
@@ -23,8 +23,40 @@ router.get('/', paginationRules, handleValidationErrors, async (req, res, next) 
       order: [['createdAt', 'DESC']]
     });
 
+    // Calculate remainingReversals for each account based on active reservations
+    const accountIds = accounts.map(acc => acc.id);
+    const activeReservations = await Reservation.findAll({
+      where: {
+        accountId: { [Op.in]: accountIds },
+        status: { [Op.in]: ['pending', 'active', 'reserved'] }
+      },
+      attributes: [
+        'accountId',
+        [Sequelize.fn('COUNT', Sequelize.col('Reservation.id')), 'count']
+      ],
+      group: ['accountId'],
+      raw: true
+    });
+
+    const reservationCountMap = {};
+    activeReservations.forEach(r => {
+      const accountId = r.accountId;
+      const count = r.count || 0;
+      reservationCountMap[accountId] = parseInt(count) || 0;
+    });
+
+    // Add calculated remainingReversals to each account
+    const accountsWithRemaining = accounts.map(account => {
+      const activeCount = reservationCountMap[account.id] || 0;
+      const remainingReversals = Math.max(0, account.reverseLimit - activeCount);
+      return {
+        ...account.toJSON(),
+        remainingReversals
+      };
+    });
+
     res.json({
-      accounts,
+      accounts: accountsWithRemaining,
       total: count,
       limit,
       offset
@@ -37,8 +69,12 @@ router.get('/', paginationRules, handleValidationErrors, async (req, res, next) 
 // Get account by ID
 router.get('/:id', idParamRule, handleValidationErrors, async (req, res, next) => {
   try {
+    const accountId = parseInt(req.params.id, 10);
+    if (isNaN(accountId)) {
+      return res.status(400).json({ error: 'Invalid account ID' });
+    }
     const account = await UserHabitatAccount.findOne({
-      where: { id: req.params.id, userId: req.userId },
+      where: { id: accountId, userId: req.userId },
       include: [
         {
           model: GitRepo,
@@ -80,8 +116,12 @@ router.post('/', async (req, res, next) => {
 // Update account
 router.patch('/:id', idParamRule, handleValidationErrors, async (req, res, next) => {
   try {
+    const accountId = parseInt(req.params.id, 10);
+    if (isNaN(accountId)) {
+      return res.status(400).json({ error: 'Invalid account ID' });
+    }
     const account = await UserHabitatAccount.findOne({
-      where: { id: req.params.id, userId: req.userId }
+      where: { id: accountId, userId: req.userId }
     });
 
     if (!account) {
@@ -107,8 +147,12 @@ router.patch('/:id', idParamRule, handleValidationErrors, async (req, res, next)
 // Delete account
 router.delete('/:id', idParamRule, handleValidationErrors, async (req, res, next) => {
   try {
+    const accountId = parseInt(req.params.id, 10);
+    if (isNaN(accountId)) {
+      return res.status(400).json({ error: 'Invalid account ID' });
+    }
     const account = await UserHabitatAccount.findOne({
-      where: { id: req.params.id, userId: req.userId }
+      where: { id: accountId, userId: req.userId }
     });
 
     if (!account) {
@@ -126,10 +170,14 @@ router.delete('/:id', idParamRule, handleValidationErrors, async (req, res, next
 // Add repo mapping
 router.post('/:id/repos', idParamRule, handleValidationErrors, async (req, res, next) => {
   try {
+    const accountId = parseInt(req.params.id, 10);
+    if (isNaN(accountId)) {
+      return res.status(400).json({ error: 'Invalid account ID' });
+    }
     const { repoId } = req.body;
 
     const account = await UserHabitatAccount.findOne({
-      where: { id: req.params.id, userId: req.userId }
+      where: { id: accountId, userId: req.userId }
     });
 
     if (!account) {
@@ -149,8 +197,12 @@ router.post('/:id/repos', idParamRule, handleValidationErrors, async (req, res, 
 // Check account health
 router.post('/:id/check-health', idParamRule, handleValidationErrors, async (req, res, next) => {
   try {
+    const accountId = parseInt(req.params.id, 10);
+    if (isNaN(accountId)) {
+      return res.status(400).json({ error: 'Invalid account ID' });
+    }
     const account = await UserHabitatAccount.findOne({
-      where: { id: req.params.id, userId: req.userId }
+      where: { id: accountId, userId: req.userId }
     });
 
     if (!account) {

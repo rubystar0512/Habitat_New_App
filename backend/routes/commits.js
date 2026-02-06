@@ -887,19 +887,29 @@ router.post('/:id/reserve', idParamRule, handleValidationErrors, async (req, res
       return res.status(400).json({ error: 'account_id is required' });
     }
 
+    const accountId = parseInt(account_id, 10);
+    if (isNaN(accountId)) {
+      return res.status(400).json({ error: 'Invalid account_id' });
+    }
+
     // Verify account belongs to user
     const account = await UserHabitatAccount.findOne({
-      where: { id: account_id, userId: req.userId, isActive: true }
+      where: { id: accountId, userId: req.userId, isActive: true }
     });
 
     if (!account) {
       return res.status(404).json({ error: 'Account not found or inactive' });
     }
 
+    const commitId = parseInt(req.params.id, 10);
+    if (isNaN(commitId)) {
+      return res.status(400).json({ error: 'Invalid commit ID' });
+    }
+
     // Check if already reserved
     const existingReservation = await Reservation.findOne({
       where: {
-        commitId: req.params.id,
+        commitId: commitId,
         userId: req.userId,
         status: 'reserved'
       }
@@ -910,7 +920,7 @@ router.post('/:id/reserve', idParamRule, handleValidationErrors, async (req, res
     }
 
     // Get commit and repo info
-    const commit = await Commit.findByPk(req.params.id, {
+    const commit = await Commit.findByPk(commitId, {
       include: [{ model: GitRepo, as: 'repo', attributes: ['habitatRepoId'] }]
     });
 
@@ -933,8 +943,8 @@ router.post('/:id/reserve', idParamRule, handleValidationErrors, async (req, res
     // Create reservation record
     const reservation = await Reservation.create({
       userId: req.userId,
-      accountId: account_id,
-      commitId: req.params.id,
+      accountId: accountId,
+      commitId: commitId,
       habitatReservationId: result.reservationId,
       status: 'reserved', // Database uses 'reserved' status
       expiresAt: result.expiresAt,
@@ -950,13 +960,22 @@ router.post('/:id/reserve', idParamRule, handleValidationErrors, async (req, res
 // Cancel reservation
 router.delete('/:id/reserve', idParamRule, handleValidationErrors, async (req, res, next) => {
   try {
+    const commitId = parseInt(req.params.id, 10);
+    if (isNaN(commitId)) {
+      return res.status(400).json({ error: 'Invalid commit ID' });
+    }
+
     const reservation = await Reservation.findOne({
       where: {
-        commitId: req.params.id,
+        commitId: commitId,
         userId: req.userId,
         status: 'reserved'
       },
-      include: [{ model: UserHabitatAccount, as: 'account' }]
+      include: [{ 
+        model: UserHabitatAccount, 
+        as: 'account',
+        required: false // Allow reservations without accounts (though shouldn't happen)
+      }]
     });
 
     if (!reservation) {
@@ -995,6 +1014,15 @@ router.post('/:id/gift', idParamRule, handleValidationErrors, async (req, res, n
       return res.status(400).json({ error: 'receiver_account_id is required – sender must select the receiver\'s Habitat account' });
     }
     const receiverId = parseInt(receiver_user_id, 10);
+    const receiverAccountId = parseInt(receiver_account_id, 10);
+    
+    if (isNaN(receiverId)) {
+      return res.status(400).json({ error: 'Invalid receiver_user_id' });
+    }
+    if (isNaN(receiverAccountId)) {
+      return res.status(400).json({ error: 'Invalid receiver_account_id' });
+    }
+    
     if (receiverId === senderId) {
       return res.status(400).json({ error: 'Cannot gift commit to yourself' });
     }
@@ -1005,7 +1033,11 @@ router.post('/:id/gift', idParamRule, handleValidationErrors, async (req, res, n
         userId: senderId,
         status: 'reserved'
       },
-      include: [{ model: UserHabitatAccount, as: 'account' }]
+      include: [{ 
+        model: UserHabitatAccount, 
+        as: 'account',
+        required: false // Allow reservations without accounts (though shouldn't happen)
+      }]
     });
 
     if (!senderReservation) {
@@ -1020,7 +1052,7 @@ router.post('/:id/gift', idParamRule, handleValidationErrors, async (req, res, n
     }
 
     const receiverAccount = await UserHabitatAccount.findOne({
-      where: { id: receiver_account_id, userId: receiverId, isActive: true }
+      where: { id: receiverAccountId, userId: receiverId, isActive: true }
     });
     if (!receiverAccount) {
       return res.status(404).json({ error: 'Receiver account not found or inactive' });
