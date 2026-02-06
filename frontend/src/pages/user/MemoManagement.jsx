@@ -29,6 +29,7 @@ import {
   ThunderboltOutlined,
   CheckCircleOutlined,
   ClockCircleOutlined,
+  DownloadOutlined,
 } from '@ant-design/icons';
 import api from '../../config/api';
 import dayjs from 'dayjs';
@@ -303,6 +304,56 @@ const MemoManagement = () => {
     setPagination({ ...pagination, current: 1 });
   };
 
+  const handleExportJSON = () => {
+    // Create a map of habitat_repo_id to cutoff_date
+    const repoCutoffMap = new Map();
+    repos.forEach(repo => {
+      if (repo.cutoffDate && repo.habitatRepoId) {
+        repoCutoffMap.set(repo.habitatRepoId, dayjs(repo.cutoffDate).startOf('day'));
+      }
+    });
+
+    // Filter commits above each repo's cutoff date
+    const exportData = memoCommits
+      .filter(memo => {
+        // If repo has no habitat_repo_id or no cutoff date, include the commit
+        if (!memo.habitat_repo_id || !repoCutoffMap.has(memo.habitat_repo_id)) {
+          return true;
+        }
+
+        // If commit has no commit_date, exclude it
+        if (!memo.commit_date) {
+          return false;
+        }
+
+        // Include if commit_date is after cutoff_date (above means strictly greater)
+        const cutoffDate = repoCutoffMap.get(memo.habitat_repo_id);
+        const commitDate = dayjs(memo.commit_date).startOf('day');
+        return commitDate.isAfter(cutoffDate);
+      })
+      .map(memo => ({
+        habitat_repo_id: memo.habitat_repo_id,
+        repo_name: memo.repo_name,
+        base_commit: memo.base_commit,
+        merged_commit: memo.merged_commit,
+        status: memo.displayStatus || 'available',
+      }));
+
+    // Create JSON blob and download
+    const jsonString = JSON.stringify(exportData, null, 2);
+    const blob = new Blob([jsonString], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `memo-export-${dayjs().format('YYYY-MM-DD-HHmmss')}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+
+    message.success(`Exported ${exportData.length} commits to JSON`);
+  };
+
   // Filter memo commits
   const filteredMemoCommits = useMemo(() => {
     let filtered = memoCommits;
@@ -377,13 +428,13 @@ const MemoManagement = () => {
   const columns = [
     {
       title: (
-        <Tooltip title="Your priority (0–100). Suggested value is auto-calculated from scores and pattern. Click the lightning button to apply it.">
+        <Tooltip title="Click the lightning button to apply it.">
           <span style={{ cursor: 'help' }}>Priority</span>
         </Tooltip>
       ),
       dataIndex: 'priority',
       key: 'priority',
-      width: 160,
+      width: 180,
       fixed: 'left',
       align: 'center',
       sorter: (a, b) => (a.priority || 0) - (b.priority || 0),
@@ -402,7 +453,6 @@ const MemoManagement = () => {
                 <Tooltip title="Matches auto-suggested value">
                   <Space size="small">
                     <CheckCircleOutlined style={{ color: 'var(--ant-color-success)' }} />
-                    <Text type="secondary" style={{ fontSize: 11 }}>Auto</Text>
                   </Space>
                 </Tooltip>
               ) : (
@@ -581,7 +631,7 @@ const MemoManagement = () => {
       title: 'PR #',
       dataIndex: 'pr_number',
       key: 'pr_number',
-      width: 120,
+      width: 140,
       fixed: 'left',
       sorter: (a, b) => {
         if (!a.pr_number && !b.pr_number) return 0;
@@ -613,22 +663,6 @@ const MemoManagement = () => {
           </Space>
         );
       },
-    },
-    {
-      title: 'Notes',
-      dataIndex: 'notes',
-      key: 'notes',
-      width: 250,
-      ellipsis: {
-        showTitle: false,
-      },
-      render: (notes) => (
-        <Tooltip title={notes || 'No notes'}>
-          <Text style={{ color: notes ? 'rgb(148, 163, 184)' : 'rgb(100, 116, 139)', fontSize: 12 }}>
-            {notes || '-'}
-          </Text>
-        </Tooltip>
-      ),
     },
     {
       title: 'Created',
@@ -769,6 +803,12 @@ const MemoManagement = () => {
                 onClick={fetchMemoCommits}
               >
                 Refresh
+              </Button>
+              <Button
+                icon={<DownloadOutlined />}
+                onClick={handleExportJSON}
+              >
+                Export JSON
               </Button>
             </Space>
           </Col>
@@ -928,7 +968,7 @@ const MemoManagement = () => {
             extra={
               currentEditItem?.suggestedPriority != null && (
                 <Space size="small" style={{ marginTop: 4 }}>
-                  <Text type="secondary">Suggested (auto): {currentEditItem.suggestedPriority}</Text>
+                  <Text type="secondary">Suggested: {currentEditItem.suggestedPriority}</Text>
                   <Button
                     type="link"
                     size="small"

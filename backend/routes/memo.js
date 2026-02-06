@@ -1,5 +1,5 @@
 const express = require('express');
-const { Op } = require('sequelize');
+const { Op, Sequelize } = require('sequelize');
 const { MemoCommit, Commit, GitRepo, CommitStatusCache, Reservation } = require('../models');
 const MEMO_LIMIT_ROUTE = Math.max(1, parseInt(process.env.MEMO_LIMIT, 10) || 45);
 const { authenticateToken } = require('../middleware/auth');
@@ -25,18 +25,31 @@ router.get('/', paginationRules, handleValidationErrors, async (req, res, next) 
         {
           model: Commit,
           as: 'commit',
+          required: true,
           include: [
             {
               model: GitRepo,
               as: 'repo',
-              attributes: ['id', 'repoName', 'fullName', 'habitatRepoId']
+              required: true,
+              where: { isActive: true },
+              attributes: ['id', 'repoName', 'fullName', 'habitatRepoId', 'cutoffDate']
             }
-          ]
+          ],
+          where: Sequelize.literal(`(
+            (SELECT cutoff_date FROM git_repos WHERE git_repos.id = commit.repo_id) IS NULL
+            OR 
+            (
+              (SELECT cutoff_date FROM git_repos WHERE git_repos.id = commit.repo_id) IS NOT NULL 
+              AND commit.commit_date IS NOT NULL 
+              AND DATE(commit.commit_date) > DATE((SELECT cutoff_date FROM git_repos WHERE git_repos.id = commit.repo_id))
+            )
+          )`)
         }
       ],
       limit,
       offset,
-      order: [['priority', 'DESC'], ['createdAt', 'DESC']]
+      order: [['priority', 'DESC'], ['createdAt', 'DESC']],
+      subQuery: false
     });
 
     const commitIds = memoCommits.map(m => m.commitId).filter(Boolean);
@@ -61,6 +74,7 @@ router.get('/', paginationRules, handleValidationErrors, async (req, res, next) 
     });
 
     // Format response to include commit details and commit status
+    // (Filtering is already done at database level)
     const formattedMemos = memoCommits.map(memo => {
       const commit = memo.commit;
       const statusInfo = statusMap[memo.commitId];
@@ -87,6 +101,7 @@ router.get('/', paginationRules, handleValidationErrors, async (req, res, next) 
         expiresAt,
         // Commit details
         repo_id: commit?.repoId,
+        habitat_repo_id: commit?.repo?.habitatRepoId,
         repo_name: commit?.repo?.fullName || commit?.repo?.repoName,
         merged_commit: commit?.mergedCommit,
         base_commit: commit?.baseCommit,
@@ -112,7 +127,7 @@ router.get('/', paginationRules, handleValidationErrors, async (req, res, next) 
 
     res.json({
       memoCommits: formattedMemos,
-      total: count,
+      total: count, // Count is already filtered at database level
       limit,
       offset,
       memoLimit: MEMO_LIMIT
