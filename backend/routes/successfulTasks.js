@@ -47,9 +47,13 @@ router.get('/', paginationRules, handleValidationErrors, async (req, res, next) 
     // All tasks are approved by default, but allow filtering by status if needed
     // No special filtering needed since all tasks are approved when submitted
 
+    // Exclude large patch fields from initial list to improve performance
     const { count, rows: tasks } = await SuccessfulTask.findAndCountAll({
       where,
       include,
+      attributes: {
+        exclude: ['basePatch', 'goldenPatch', 'testPatch']
+      },
       limit,
       offset,
       order: [['createdAt', 'DESC']]

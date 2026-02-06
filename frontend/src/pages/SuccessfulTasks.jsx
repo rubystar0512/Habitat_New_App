@@ -50,7 +50,7 @@ const { TabPane } = Tabs;
 const SuccessfulTasks = () => {
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
-  
+
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -132,9 +132,9 @@ const SuccessfulTasks = () => {
         ai_success_rate: values.aiSuccessRate,
         payout_amount: values.payoutAmount
       };
-      
+
       console.log('Submitting task with payload:', { ...payload, base_patch: basePatchValue ? '...' : '', golden_patch: goldenPatchValue ? '...' : '', test_patch: testPatchValue ? '...' : '' });
-      
+
       if (editingTaskId) {
         // Update existing task
         await api.patch(`/successful-tasks/${editingTaskId}`, payload);
@@ -156,9 +156,9 @@ const SuccessfulTasks = () => {
       const errorData = err.response?.data || {};
       const errorMsg = errorData.error || 'Failed to submit task';
       const errorMessage = errorData.message || errorMsg;
-      
+
       message.error(errorMessage);
-      
+
       // If commit not found, provide more helpful information
       if (errorMsg.includes('Commit not found')) {
         const gitBaseCommit = errorData.git_base_commit || values.gitBaseCommit;
@@ -323,6 +323,7 @@ const SuccessfulTasks = () => {
       key: 'taskName',
       width: 250,
       fixed: 'left',
+      sorter: (a, b) => (a.taskName || '').localeCompare(b.taskName || ''),
       render: (text, record) => (
         <Text style={{ color: 'rgb(241, 245, 249)', fontSize: 13, fontWeight: 500 }}>
           {text}
@@ -334,6 +335,11 @@ const SuccessfulTasks = () => {
       dataIndex: ['commit', 'repo', 'fullName'],
       key: 'repo',
       width: 200,
+      sorter: (a, b) => {
+        const aRepo = a.commit?.repo?.fullName || '';
+        const bRepo = b.commit?.repo?.fullName || '';
+        return aRepo.localeCompare(bRepo);
+      },
       render: (text, record) => {
         const repoName = text || '-';
         const repoUrl = repoName !== '-' ? `https://github.com/${repoName}` : null;
@@ -363,6 +369,11 @@ const SuccessfulTasks = () => {
       dataIndex: ['commit', 'baseCommit'],
       key: 'baseCommit',
       width: 120,
+      sorter: (a, b) => {
+        const aCommit = a.commit?.baseCommit || '';
+        const bCommit = b.commit?.baseCommit || '';
+        return aCommit.localeCompare(bCommit);
+      },
       render: (text) => {
         if (!text) return <Text type="secondary">-</Text>;
         return (
@@ -388,6 +399,11 @@ const SuccessfulTasks = () => {
       dataIndex: ['commit', 'mergedCommit'],
       key: 'mergedCommit',
       width: 120,
+      sorter: (a, b) => {
+        const aCommit = a.commit?.mergedCommit || '';
+        const bCommit = b.commit?.mergedCommit || '';
+        return aCommit.localeCompare(bCommit);
+      },
       render: (text) => {
         if (!text) return <Text type="secondary">-</Text>;
         return (
@@ -413,6 +429,12 @@ const SuccessfulTasks = () => {
       dataIndex: 'prNumber',
       key: 'prNumber',
       width: 100,
+      sorter: (a, b) => {
+        if (!a.prNumber && !b.prNumber) return 0;
+        if (!a.prNumber) return 1;
+        if (!b.prNumber) return -1;
+        return a.prNumber - b.prNumber;
+      },
       render: (prNumber, record) => {
         if (!prNumber) return <Text type="secondary">-</Text>;
         const repoName = record.commit?.repo?.fullName;
@@ -445,6 +467,12 @@ const SuccessfulTasks = () => {
       dataIndex: 'aiSuccessRate',
       key: 'aiSuccessRate',
       width: 130,
+      sorter: (a, b) => {
+        if (!a.aiSuccessRate && !b.aiSuccessRate) return 0;
+        if (!a.aiSuccessRate) return 1;
+        if (!b.aiSuccessRate) return -1;
+        return a.aiSuccessRate - b.aiSuccessRate;
+      },
       render: (rate) => (
         <Text style={{ color: 'rgb(148, 163, 184)', fontSize: 12 }}>
           {rate ? `${rate}%` : '-'}
@@ -456,17 +484,37 @@ const SuccessfulTasks = () => {
       dataIndex: 'payoutAmount',
       key: 'payoutAmount',
       width: 100,
-      render: (amount) => (
-        <Text style={{ color: '#16a34a', fontSize: 12, fontWeight: 500 }}>
-          {amount ? `$${amount}` : '-'}
-        </Text>
-      )
+      sorter: (a, b) => {
+        if (!a.payoutAmount && !b.payoutAmount) return 0;
+        if (!a.payoutAmount) return 1;
+        if (!b.payoutAmount) return -1;
+        return a.payoutAmount - b.payoutAmount;
+      },
+      render: (amount) => {
+        // Color coding: 200 = one color, 1200 = another color
+        let color = '#16a34a'; // default green
+        if (amount && Number(amount) === 200) {
+          color = '#3b82f6'; // blue for 200
+        } else if (amount && Number(amount) === 1200) {
+          color = '#f59e0b'; // orange/amber for 1200
+        }
+        return (
+          <Text style={{ color, fontSize: 12, fontWeight: 500 }}>
+            {amount ? `$${amount}` : '-'}
+          </Text>
+        );
+      }
     },
     {
       title: 'Submitted By',
       dataIndex: ['submitter', 'username'],
       key: 'submitter',
       width: 150,
+      sorter: (a, b) => {
+        const aUser = a.submitter?.username || '';
+        const bUser = b.submitter?.username || '';
+        return aUser.localeCompare(bUser);
+      },
       render: (text) => (
         <Text style={{ color: 'rgb(148, 163, 184)', fontSize: 12 }}>
           {text || '-'}
@@ -478,6 +526,12 @@ const SuccessfulTasks = () => {
       dataIndex: 'createdAt',
       key: 'createdAt',
       width: 180,
+      sorter: (a, b) => {
+        if (!a.createdAt && !b.createdAt) return 0;
+        if (!a.createdAt) return 1;
+        if (!b.createdAt) return -1;
+        return new Date(a.createdAt) - new Date(b.createdAt);
+      },
       render: (date) => (
         <Text style={{ color: 'rgb(148, 163, 184)', fontSize: 12 }}>
           {date ? dayjs(date).format('YYYY-MM-DD HH:mm:ss') : '-'}
@@ -492,7 +546,7 @@ const SuccessfulTasks = () => {
       render: (_, record) => {
         const canEdit = record.userId === user?.id; // Can edit own tasks
         const canDelete = record.userId === user?.id || isAdmin; // Members can delete own tasks, admins can delete any
-        
+
         return (
           <Space>
             <Tooltip title="View Details">
@@ -663,6 +717,15 @@ const SuccessfulTasks = () => {
             columns={columns}
             dataSource={tasks}
             rowKey="id"
+            rowClassName={(record) => {
+              // Color code rows based on payout amount
+              if (record.payoutAmount === 200) {
+                return 'payout-200-row';
+              } else if (record.payoutAmount === 1200) {
+                return 'payout-1200-row';
+              }
+              return '';
+            }}
             pagination={{
               current: pagination.current,
               pageSize: pagination.pageSize,
@@ -674,7 +737,7 @@ const SuccessfulTasks = () => {
               },
               pageSizeOptions: ['10', '20', '50', '100']
             }}
-            scroll={{ x: 'max-content' }}
+            scroll={{ x: 'max-content', y: '54vh' }}
           />
         )}
       </Card>
@@ -730,8 +793,8 @@ const SuccessfulTasks = () => {
                 label="Git Base Commit"
                 rules={[{ required: true, message: 'Please enter base commit hash' }]}
               >
-                <Input 
-                  size="large" 
+                <Input
+                  size="large"
                   placeholder="Base commit hash"
                   onChange={async (e) => {
                     const hash = e.target.value.trim();
@@ -746,9 +809,9 @@ const SuccessfulTasks = () => {
                           }
                         });
                         const commits = response.data.commits || [];
-                        const matchingCommit = commits.find(c => 
-                          c.baseCommit === hash || 
-                          c.mergedCommit === hash || 
+                        const matchingCommit = commits.find(c =>
+                          c.baseCommit === hash ||
+                          c.mergedCommit === hash ||
                           c.sourceSha === hash
                         );
                         if (matchingCommit) {
@@ -772,8 +835,8 @@ const SuccessfulTasks = () => {
                 label="Merge Commit"
                 rules={[{ required: true, message: 'Please enter merge commit hash' }]}
               >
-                <Input 
-                  size="large" 
+                <Input
+                  size="large"
                   placeholder="Merge commit hash"
                   onChange={async (e) => {
                     const hash = e.target.value.trim();
@@ -788,9 +851,9 @@ const SuccessfulTasks = () => {
                           }
                         });
                         const commits = response.data.commits || [];
-                        const matchingCommit = commits.find(c => 
-                          c.baseCommit === hash || 
-                          c.mergedCommit === hash || 
+                        const matchingCommit = commits.find(c =>
+                          c.baseCommit === hash ||
+                          c.mergedCommit === hash ||
                           c.sourceSha === hash
                         );
                         if (matchingCommit) {
@@ -822,7 +885,8 @@ const SuccessfulTasks = () => {
             <Col span={12}>
               <Form.Item
                 name="payoutAmount"
-                label="Payout Amount (Optional)"
+                label="Payout Amount"
+                rules={[{ required: true, message: 'Please enter payout amount' }]}
               >
                 <InputNumber
                   style={{ width: '100%' }}
@@ -935,10 +999,10 @@ const SuccessfulTasks = () => {
 
           <Form.Item>
             <Space>
-              <Button 
-                type="primary" 
-                htmlType="submit" 
-                loading={submitting} 
+              <Button
+                type="primary"
+                htmlType="submit"
+                loading={submitting}
                 size="large"
                 disabled={!goldenPatchValue || !testPatchValue}
               >
@@ -1171,18 +1235,20 @@ const SuccessfulTasks = () => {
                 { title: 'ID', dataIndex: 'id', width: 70, render: (id) => <Text code>{id}</Text> },
                 { title: 'Merged', dataIndex: 'mergedCommit', width: 100, render: (t) => t ? <Text code>{String(t).slice(0, 8)}</Text> : '—' },
                 { title: 'Repo', key: 'repo', width: 180, render: (_, r) => r.repo?.fullName || r.repo?.repoName || '—' },
-                { title: 'Status', dataIndex: 'status', width: 120, render: (s) => {
-                  if (!s) return '—';
-                  const statusConfig = {
-                    paid_out: { color: 'green', label: 'paid_out' },
-                    too_easy: { color: 'orange', label: 'too_easy' },
-                    already_reserved: { color: 'purple', label: 'already reserved' },
-                    reserved: { color: 'gold', label: 'reserved' },
-                    available: { color: 'blue', label: 'available' }
-                  };
-                  const config = statusConfig[s] || { color: 'default', label: s };
-                  return <Tag color={config.color}>{config.label}</Tag>;
-                } },
+                {
+                  title: 'Status', dataIndex: 'status', width: 120, render: (s) => {
+                    if (!s) return '—';
+                    const statusConfig = {
+                      paid_out: { color: 'green', label: 'paid_out' },
+                      too_easy: { color: 'orange', label: 'too_easy' },
+                      already_reserved: { color: 'purple', label: 'already reserved' },
+                      reserved: { color: 'gold', label: 'reserved' },
+                      available: { color: 'blue', label: 'available' }
+                    };
+                    const config = statusConfig[s] || { color: 'default', label: s };
+                    return <Tag color={config.color}>{config.label}</Tag>;
+                  }
+                },
                 { title: 'H', dataIndex: 'habitateScore', width: 60 },
                 { title: 'S', dataIndex: 'suitabilityScore', width: 60 },
                 { title: 'D', dataIndex: 'difficultyScore', width: 60 }
@@ -1191,6 +1257,21 @@ const SuccessfulTasks = () => {
           </>
         ) : null}
       </Modal>
+
+      <style>{`
+        .payout-200-row {
+          background-color: rgba(59, 130, 246, 0.1) !important;
+        }
+        .payout-200-row:hover {
+          background-color: rgba(59, 130, 246, 0.15) !important;
+        }
+        .payout-1200-row {
+          background-color: rgba(245, 158, 11, 0.1) !important;
+        }
+        .payout-1200-row:hover {
+          background-color: rgba(245, 158, 11, 0.15) !important;
+        }
+      `}</style>
     </div>
   );
 };
