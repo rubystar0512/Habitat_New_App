@@ -89,6 +89,36 @@ python fetch_commits.py repos.json --fetch-only
   - `commit_dependency_analysis`: Detailed dependency change analysis
   - `commit_test_analysis`: Detailed test file analysis
 
+## ML: Success prediction (good for paid_out)
+
+Training data is exported from `commit_status_cache` + `commits` (status `paid_out` or `too_easy`).
+
+### 1. Export training CSV
+```bash
+python ml_data_convertor.py
+# Output: ml_train_data.csv
+# Columns: 28 features + status
+```
+
+### 2. Train the model
+```bash
+pip install -r requirements.txt   # pandas, scikit-learn, joblib, xgboost
+python train_success_model.py [path/to/ml_train_data.csv]
+# Saves: success_model.joblib, success_scaler.joblib, success_config.json
+```
+
+### 3. Predict for a commit
+```bash
+python success_predictor.py <habitate> <difficulty> <suitability> [threshold]
+```
+
+From Python (optional extra features):
+```python
+from success_predictor import predict
+prob, is_good = predict(habitate_score, difficulty_score, suitability_score)
+# Or: predict(h, d, s, repo_id=1, file_changes=5, ...)
+```
+
 ## Notes
 
 - Script handles duplicate commits (ON DUPLICATE KEY UPDATE)
