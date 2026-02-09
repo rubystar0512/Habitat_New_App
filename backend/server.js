@@ -96,6 +96,16 @@ const startServer = async () => {
       } catch (error) {
         console.error('❌ Failed to start commit status cron:', error);
       }
+
+      // Start reservations sync cron (only if RESERVATIONS_SYNC_ENABLED=true)
+      try {
+        await reservationsSyncCron.start();
+        if (reservationsSyncCron.isEnabled()) {
+          console.log(`⏰ Reservations sync cron job started`);
+        }
+      } catch (error) {
+        console.error('❌ Failed to start reservations sync cron:', error);
+      }
     });
   } catch (error) {
     console.error('❌ Failed to start server:', error);

@@ -7,10 +7,11 @@ const reservationsSyncCron = require('../services/reservationsSyncCron');
 router.use(authenticateToken);
 router.use(requireAdmin);
 
-// Get reservations sync cron schedule
+// Get reservations sync cron schedule and enabled state
 router.get('/reservations-sync-cron', (req, res) => {
   try {
     res.json({
+      enabled: reservationsSyncCron.isEnabled(),
       schedule: reservationsSyncCron.getSchedule(),
       isRunning: reservationsSyncCron.isRunning
     });
@@ -22,6 +23,11 @@ router.get('/reservations-sync-cron', (req, res) => {
 // Update reservations sync cron schedule
 router.post('/reservations-sync-cron', (req, res) => {
   try {
+    if (!reservationsSyncCron.isEnabled()) {
+      return res.status(400).json({
+        error: 'Reservations sync is disabled. Set RESERVATIONS_SYNC_ENABLED=true in the backend environment to enable.'
+      });
+    }
     const { schedule } = req.body;
     
     if (!schedule) {
@@ -49,6 +55,11 @@ router.post('/reservations-sync-cron', (req, res) => {
 // Manually trigger reservations sync
 router.post('/reservations-sync-cron/trigger', async (req, res) => {
   try {
+    if (!reservationsSyncCron.isEnabled()) {
+      return res.status(400).json({
+        error: 'Reservations sync is disabled. Set RESERVATIONS_SYNC_ENABLED=true in the backend environment to enable.'
+      });
+    }
     await reservationsSyncCron.triggerSync();
     res.json({ message: 'Reservations sync triggered successfully' });
   } catch (error) {

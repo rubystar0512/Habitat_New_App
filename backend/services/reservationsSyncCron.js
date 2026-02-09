@@ -7,8 +7,17 @@ class ReservationsSyncCronService {
   constructor() {
     this.job = null;
     this.isRunning = false;
+    // Enable only when RESERVATIONS_SYNC_ENABLED=true (default: off)
+    this.enabled = process.env.RESERVATIONS_SYNC_ENABLED === 'true';
     // Default: run every 30 minutes
     this.cronSchedule = process.env.RESERVATIONS_SYNC_CRON_SCHEDULE || '*/30 * * * *';
+  }
+
+  /**
+   * Whether the reservations sync cron is enabled via env (RESERVATIONS_SYNC_ENABLED=true).
+   */
+  isEnabled() {
+    return this.enabled;
   }
 
   /**
@@ -35,9 +44,13 @@ class ReservationsSyncCronService {
   }
 
   /**
-   * Start the cron service
+   * Start the cron service (no-op if RESERVATIONS_SYNC_ENABLED is not 'true')
    */
   async start() {
+    if (!this.enabled) {
+      console.log('[ReservationsSyncCron] Service disabled (RESERVATIONS_SYNC_ENABLED is not true). Set RESERVATIONS_SYNC_ENABLED=true to enable.');
+      return;
+    }
     if (this.isRunning) {
       console.log('[ReservationsSyncCron] Service already running');
       return;
