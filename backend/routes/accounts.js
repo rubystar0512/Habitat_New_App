@@ -66,6 +66,27 @@ router.get('/', paginationRules, handleValidationErrors, async (req, res, next) 
   }
 });
 
+// Export current user's Habitat accounts as JSON (team members): accountName, token
+router.get('/export', async (req, res) => {
+  try {
+    const accounts = await UserHabitatAccount.findAll({
+      where: { userId: req.userId },
+      attributes: ['accountName', 'apiToken'],
+      order: [['accountName', 'ASC']],
+      raw: true
+    });
+    const exportData = accounts.map((a) => ({
+      accountName: a.accountName,
+      token: a.apiToken
+    }));
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Content-Disposition', 'attachment; filename="my-habitat-accounts.json"');
+    res.json(exportData);
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'Failed to export accounts' });
+  }
+});
+
 // Get account by ID
 router.get('/:id', idParamRule, handleValidationErrors, async (req, res, next) => {
   try {

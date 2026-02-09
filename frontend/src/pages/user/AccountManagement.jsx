@@ -31,6 +31,7 @@ import {
   ExclamationCircleOutlined,
   QuestionCircleOutlined,
   SyncOutlined,
+  DownloadOutlined,
 } from '@ant-design/icons';
 import api from '../../config/api';
 import dayjs from 'dayjs';
@@ -172,6 +173,22 @@ const AccountManagement = () => {
       fetchAccounts();
     } catch (error) {
       message.error(error.response?.data?.error || 'Failed to delete account');
+    }
+  };
+
+  const handleExportJson = async () => {
+    try {
+      const response = await api.get('/accounts/export');
+      const blob = new Blob([JSON.stringify(response.data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'my-habitat-accounts.json';
+      a.click();
+      URL.revokeObjectURL(url);
+      message.success('Your Habitat accounts exported successfully');
+    } catch (error) {
+      message.error(error.response?.data?.error || 'Failed to export accounts');
     }
   };
 
@@ -400,13 +417,21 @@ const AccountManagement = () => {
             </Title>
           </Col>
           <Col>
-            <Button
-              type="primary"
-              icon={<PlusOutlined />}
-              onClick={() => setCreateModalVisible(true)}
-            >
-              Add Account
-            </Button>
+            <Space>
+              <Button
+                icon={<DownloadOutlined />}
+                onClick={handleExportJson}
+              >
+                Export JSON
+              </Button>
+              <Button
+                type="primary"
+                icon={<PlusOutlined />}
+                onClick={() => setCreateModalVisible(true)}
+              >
+                Add Account
+              </Button>
+            </Space>
           </Col>
         </Row>
 

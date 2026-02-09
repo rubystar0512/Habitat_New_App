@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
 const reservationsSyncCron = require('../services/reservationsSyncCron');
+const { GitRepo, UserHabitatAccount } = require('../models');
 
 // All routes require admin authentication
 router.use(authenticateToken);
@@ -64,6 +65,50 @@ router.post('/reservations-sync-cron/trigger', async (req, res) => {
     res.json({ message: 'Reservations sync triggered successfully' });
   } catch (error) {
     res.status(500).json({ error: error.message || 'Failed to trigger sync' });
+  }
+});
+
+// Export repositories (active only) as JSON: habitatRepoId, repoName, fullName, status, cutoffDate
+router.get('/repos/export', async (req, res) => {
+  try {
+    const repos = await GitRepo.findAll({
+      where: { isActive: true },
+      attributes: ['habitatRepoId', 'repoName', 'fullName', 'isActive', 'cutoffDate'],
+      order: [['fullName', 'ASC']],
+      raw: true
+    });
+    const exportData = repos.map((r) => ({
+      habitatRepoId: r.habitatRepoId,
+      repoName: r.repoName,
+      fullName: r.fullName,
+      status: Boolean(r.isActive),
+      cutoffDate: r.cutoffDate
+    }));
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Content-Disposition', 'attachment; filename="repos-export.json"');
+    res.json(exportData);
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'Failed to export repositories' });
+  }
+});
+
+// Export Habitat accounts as JSON: token, accountName (admin: all accounts)
+router.get('/habitat-accounts/export', async (req, res) => {
+  try {
+    const accounts = await UserHabitatAccount.findAll({
+      attributes: ['accountName', 'apiToken'],
+      order: [['accountName', 'ASC']],
+      raw: true
+    });
+    const exportData = accounts.map((a) => ({
+      accountName: a.accountName,
+      token: a.apiToken
+    }));
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Content-Disposition', 'attachment; filename="habitat-accounts-export.json"');
+    res.json(exportData);
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'Failed to export Habitat accounts' });
   }
 });
 

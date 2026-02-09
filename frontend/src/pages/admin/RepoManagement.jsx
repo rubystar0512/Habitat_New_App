@@ -29,6 +29,7 @@ import {
   CheckCircleOutlined,
   CloseCircleOutlined,
   SyncOutlined,
+  DownloadOutlined,
 } from '@ant-design/icons';
 import api from '../../config/api';
 import dayjs from 'dayjs';
@@ -186,6 +187,22 @@ const RepoManagement = () => {
       fetchRepos();
     } catch (error) {
       message.error(error.response?.data?.error || 'Failed to delete repository');
+    }
+  };
+
+  const handleExportJson = async () => {
+    try {
+      const response = await api.get('/admin/repos/export');
+      const blob = new Blob([JSON.stringify(response.data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'repos-export.json';
+      a.click();
+      URL.revokeObjectURL(url);
+      message.success('Repositories (active only) exported successfully');
+    } catch (error) {
+      message.error(error.response?.data?.error || 'Failed to export repositories');
     }
   };
 
@@ -409,6 +426,12 @@ const RepoManagement = () => {
           </Col>
           <Col>
             <Space>
+              <Button
+                icon={<DownloadOutlined />}
+                onClick={handleExportJson}
+              >
+                Export JSON
+              </Button>
               <Button
                 icon={<SyncOutlined />}
                 onClick={handleSyncFromHabitat}
