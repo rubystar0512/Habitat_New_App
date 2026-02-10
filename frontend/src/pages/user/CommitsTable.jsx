@@ -933,13 +933,14 @@ const CommitsTable = () => {
         render: (_, record) => {
           const isReserved = record.userReservation && record.userReservation.status === 'reserved';
           const isInMemo = record.isInMemo;
-          const memoedBy = record.memoedBy; // Info about who else has memoed this commit
+          const memoedBy = record.memoedBy; // Info about who else has memoed this commit (only shown to admin)
           const isUnsuitable = record.isUnsuitable;
-          const canMemo = !memoedBy || isInMemo; // Can only memo if not memoed by another user or already in own memo
+          const canMemo = isAdmin() ? (!memoedBy || isInMemo) : true;
+          const showMemoedBy = isAdmin() && memoedBy;
 
           const memoTooltip = isInMemo
             ? 'Remove from memo'
-            : memoedBy
+            : showMemoedBy
               ? `Already in ${memoedBy.username || 'another team member'}'s memo`
               : 'Add to memo';
 
@@ -952,12 +953,12 @@ const CommitsTable = () => {
                   icon={<BookOutlined />}
                   onClick={() => handleMemo(record.id, isInMemo, memoedBy)}
                   loading={actionLoading[`memo-${record.id}`]}
-                  disabled={!canMemo && !isInMemo}
+                  disabled={isAdmin() && !canMemo && !isInMemo}
                   style={{
-                    color: isInMemo ? '#faad14' : memoedBy ? '#ff4d4f' : '#8c8c8c',
+                    color: isInMemo ? '#faad14' : showMemoedBy ? '#ff4d4f' : '#8c8c8c',
                     padding: '4px 8px',
-                    opacity: (!canMemo && !isInMemo) ? 0.5 : 1,
-                    cursor: (!canMemo && !isInMemo) ? 'not-allowed' : 'pointer',
+                    opacity: (isAdmin() && !canMemo && !isInMemo) ? 0.5 : 1,
+                    cursor: (isAdmin() && !canMemo && !isInMemo) ? 'not-allowed' : 'pointer',
                   }}
                   onMouseEnter={(e) => {
                     if (canMemo || isInMemo) {
