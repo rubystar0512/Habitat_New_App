@@ -359,6 +359,7 @@ const MemoManagement = () => {
         repo_name: memo.repo_name,
         base_commit: memo.base_commit,
         merged_commit: memo.merged_commit,
+        commit_date: memo.commit_date,
         status: memo.displayStatus || 'available',
       }));
 
