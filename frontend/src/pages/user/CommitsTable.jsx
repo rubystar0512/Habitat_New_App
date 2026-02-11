@@ -485,10 +485,10 @@ const CommitsTable = () => {
 
   const handleMemo = async (commitId, isInMemo, memoedBy) => {
     // Prevent memoing if already memoed by another user
-    if (!isInMemo && memoedBy) {
-      message.warning(`This commit is already in ${memoedBy.username || 'another team member'}'s memo`);
-      return;
-    }
+    // if (!isInMemo && memoedBy) {
+    //   message.warning(`This commit is already in ${memoedBy.username || 'another team member'}'s memo`);
+    //   return;
+    // }
 
     setActionLoading({ ...actionLoading, [`memo-${commitId}`]: true });
     try {
@@ -842,6 +842,15 @@ const CommitsTable = () => {
         sorter: true,
         render: (val) => <span style={{ color: '#ff4d4f' }}>-{val || 0}</span>,
       },
+      {
+        title: 'Commit Date',
+        dataIndex: 'commitDate',
+        key: 'commitDate',
+        width: 120,
+        align: 'center',
+        sorter: true,
+        render: (date) => date ? dayjs(date).format('YYYY-MM-DD') : '-',
+      },
     ];
 
     // Add score columns only for admins
@@ -1114,6 +1123,7 @@ const CommitsTable = () => {
     { key: 'fileChanges', label: 'Files', defaultVisible: true },
     { key: 'additions', label: 'Additions', defaultVisible: true },
     { key: 'deletions', label: 'Deletions', defaultVisible: true },
+    { key: 'commitDate', label: 'Commit Date', defaultVisible: true },
     { key: 'habitateScore', label: 'Habitat Score', defaultVisible: isAdmin() },
     { key: 'difficultyScore', label: 'Difficulty', defaultVisible: isAdmin() },
     { key: 'suitabilityScore', label: 'Suitability', defaultVisible: isAdmin() },
